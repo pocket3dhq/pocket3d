@@ -1,0 +1,28 @@
+# Databases for `pnpm dev`. Not for production: see docker-compose.yaml (self-hosting).
+#
+# Port 5439 on 127.0.0.1, so it doesn't clash with a local Postgres on 5432
+# or the other local stacks (5436-5438). Its own project name keeps it apart
+# from docker-compose.yaml in the same folder.
+name: pocket3d-dev
+
+services:
+  pocket3d-postgres:
+    image: postgres:17-alpine
+    container_name: pocket3d-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pocket3d-local
+      POSTGRES_PASSWORD: pocket3d-local-pwd
+      POSTGRES_DB: pocket3d-db-local
+    volumes:
+      - pocket3d-dev-postgres:/var/lib/postgresql/data
+    ports:
+      - 127.0.0.1:5439:5432
+    healthcheck:
+      test: pg_isready -U pocket3d-local -d pocket3d-db-local
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pocket3d-dev-postgres:

@@ -1,0 +1,12 @@
+{
+  "name": "pocket3d-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "dotenv -e ../../.env -- next dev -p 4200",
+    "build": "next build",
+    "start": "dotenv -e ../../.env -- next start -p 4200"
+  },
+  "license": "AGPL-3.0"
+}

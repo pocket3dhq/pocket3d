@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A person who signs in. Signup also creates their own Organization, which
+// owns the models and API keys (teams can come later)
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique // always stored lowercased
+  name      String?
+  password  String // scrypt$N$r$p$salt$hash (services/password.ts), never leaves the server
+  activated Boolean   @default(true) // false until the email link is opened (only with an email provider)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organizations UserOrganization[]
+  sessions      Session[]
+  authTokens    AuthToken[]
+  apiKeys       ApiKey[]
+  oauthGrants   OAuthGrant[]
+}
+
+model Organization {
+  id        String    @id @default(uuid())
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  users         UserOrganization[]
+  apiKeys       ApiKey[]
+  assets        Asset[]
+  uploadTickets UploadTicket[]
+  oauthGrants   OAuthGrant[]
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model UserOrganization {
+  id             String       @id @default(uuid())
+  userId         String
+  organizationId String
+  role           Role         @default(ADMIN)
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+// A browser login. The cookie holds a random secret; only its sha256 is
+// stored, so a database leak doesn't hand out sessions
+model Session {
+  id         String   @id @default(uuid())
+  tokenHash  String   @unique
+  userId     String
+  userAgent  String?
+  expiresAt  DateTime
+  lastUsedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// What the CLI and agents send. Shown once at creation; only the sha256 is kept
+model ApiKey {
+  id             String       @id @default(uuid())
+  organizationId String
+  createdById    String
+  name           String
+  prefix         String // first characters of the key, so people can tell keys apart
+  keyHash        String       @unique
+  lastUsedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  revokedAt      DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdBy      User         @relation(fields: [createdById], references: [id])
+
+  @@index([organizationId])
+}
+
+enum AuthTokenType {
+  ACTIVATE
+  RESET
+}
+
+// Single-use links sent by email (activation, password reset)
+model AuthToken {
+  id        String        @id @default(uuid())
+  userId    String
+  type      AuthTokenType
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+  user      User          @relation(fields: [userId], references: [id])
+
+  @@index([userId, type])
+}
+
+// A published 3D model. The id is also the share link: MAIN_URL/m/<id>
+model Asset {
+  id             String        @id // 12-char crypto-random base62 (makeId), unguessable
+  organizationId String? // null: published before accounts existed (nobody can rename or delete it)
+  title          String
+  name           String // storage key of the .glb
+  path           String // public URL of the .glb
+  fileSize       Int
+  coverName      String? // storage key of the cover image
+  coverPath      String? // public URL of the cover image (link previews)
+  coverSize      Int? // bytes; with fileSize, counts toward MAX_STORAGE_PER_ORG_MB
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([createdAt])
+  @@index([organizationId, deletedAt, createdAt])
+}
+
+// A single-use upload link (MCP create_upload_link): lets an agent with a
+// shell send a local file with curl, without ever seeing an API key. Only the
+// sha256 of the token is kept
+model UploadTicket {
+  id             String       @id @default(uuid())
+  organizationId String
+  tokenHash      String       @unique
+  title          String?
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([expiresAt])
+}
+
+// An app that registered itself (OAuth dynamic client registration, RFC 7591):
+// Claude, Cursor, Codex... connecting to the MCP server. PKCE is always
+// required; a client that asks for a secret gets one (only its sha256 is kept)
+model OAuthClient {
+  id                      String       @id @default(uuid())
+  clientId                String       @unique
+  clientSecretHash        String?
+  tokenEndpointAuthMethod String       @default("none") // none | client_secret_post | client_secret_basic
+  name                    String
+  redirectUris            String[]
+  createdAt               DateTime     @default(now())
+  grants                  OAuthGrant[]
+}
+
+// One "Allow" on the consent page: the code, then the tokens it turned into.
+// Code, access and refresh tokens are stored as sha256 only
+model OAuthGrant {
+  id               String       @id @default(uuid())
+  clientId         String
+  userId           String
+  organizationId   String
+  codeHash         String?      @unique
+  codeExpiresAt    DateTime?
+  codeChallenge    String
+  redirectUri      String
+  accessTokenHash  String?      @unique
+  accessExpiresAt  DateTime?
+  refreshTokenHash String?      @unique
+  refreshExpiresAt DateTime?
+  lastUsedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime     @default(now())
+  client           OAuthClient  @relation(fields: [clientId], references: [id])
+  user             User         @relation(fields: [userId], references: [id])
+  organization     Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([userId])
+  @@index([organizationId])
+}

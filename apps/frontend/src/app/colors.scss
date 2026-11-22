@@ -1,0 +1,16 @@
+// Design tokens. Tailwind maps them in tailwind.config.cjs (bg-bg, text-textMuted...)
+// pocket3d is dark-only for now: a 3D viewer reads best on a dark backdrop
+:root {
+  --p3d-bg: #0b0b10;
+  --p3d-bg-inner: #15151d;
+  --p3d-line: #26262f;
+  --p3d-text: #f4f4f6;
+  --p3d-text-muted: #9a9aa6;
+  --p3d-accent: #8b5cf6;
+  --p3d-accent-text: #ffffff;
+  --p3d-danger: #f87171;
+
+  // the stage behind the model
+  --p3d-stage-top: #1c1b26;
+  --p3d-stage-bottom: #08080c;
+}

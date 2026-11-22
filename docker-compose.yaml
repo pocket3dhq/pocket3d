@@ -1,0 +1,76 @@
+# Self-host pocket3d: the app (one image) + Postgres.
+#
+#   docker compose up -d --build
+#   → http://localhost:4007: sign up, create an API key at /dashboard/keys, then
+#     pocket3d login http://localhost:4007 <key>
+#
+# To keep the instance to yourself, sign up first, then set
+# DISABLE_REGISTRATION: 'true' below and `docker compose up -d` again.
+name: pocket3d
+
+services:
+  pocket3d:
+    build: .
+    image: ghcr.io/pocket3dhq/pocket3d:latest
+    container_name: pocket3d
+    restart: always
+    environment:
+      # === Required Settings
+      # Exactly the URL people open pocket3d on: share links are MAIN_URL/m/<id>
+      MAIN_URL: 'http://localhost:4007'
+      DATABASE_URL: 'postgresql://pocket3d-user:pocket3d-password@pocket3d-postgres:5432/pocket3d-db'
+
+      # === Storage Settings
+      STORAGE_PROVIDER: 'local'
+      UPLOAD_DIRECTORY: '/uploads'
+
+      # === Cloudflare (R2) Settings
+      # STORAGE_PROVIDER: 'cloudflare'
+      # CLOUDFLARE_ACCOUNT_ID: 'your-account-id'
+      # CLOUDFLARE_ACCESS_KEY: 'your-access-key'
+      # CLOUDFLARE_SECRET_ACCESS_KEY: 'your-secret-access-key'
+      # CLOUDFLARE_BUCKETNAME: 'your-bucket-name'
+      # CLOUDFLARE_BUCKET_URL: 'https://files.example.com'
+
+      # === Accounts
+      # DISABLE_REGISTRATION: 'true'   # only the first account can sign up
+      # MAX_STORAGE_PER_ORG_MB: '500'  # per account (models + covers); unset = unlimited
+
+      # === Email (optional): activation links and password reset through Resend
+      # RESEND_API_KEY: 're_...'
+      # EMAIL_FROM_ADDRESS: 'hello@your-domain.com'
+      # EMAIL_FROM_NAME: 'pocket3d'
+
+      # === Behind a proxy that sets the visitor IP (only if nothing else can reach this server)
+      # TRUSTED_IP_HEADER: 'cf-connecting-ip'   # e.g. behind Cloudflare
+
+      # === Optional
+      # REPO_URL: ''   # shows an "open source" link on the home page and viewer
+      # DEMO_URL: ''   # a MAIN_URL/m/<id> link shown on the home page
+    volumes:
+      - pocket3d-uploads:/uploads
+    ports:
+      - '4007:5000'
+    depends_on:
+      pocket3d-postgres:
+        condition: service_healthy
+
+  pocket3d-postgres:
+    image: postgres:17-alpine
+    container_name: pocket3d-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: pocket3d-user
+      POSTGRES_PASSWORD: pocket3d-password
+      POSTGRES_DB: pocket3d-db
+    volumes:
+      - pocket3d-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U pocket3d-user -d pocket3d-db
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pocket3d-uploads:
+  pocket3d-postgres-data:

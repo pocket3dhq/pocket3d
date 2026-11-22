@@ -1,0 +1,35 @@
+# dependencies
+node_modules
+
+# compiled output
+dist
+tmp
+*.tsbuildinfo
+.next
+next-env.d.ts
+
+# env and secrets
+.env
+.env.*
+!.env.example
+
+# local storage (STORAGE_PROVIDER=local)
+/uploads/
+
+# tools
+.playwright-mcp/
+coverage/
+
+# editors / OS
+.vscode/*
+!.vscode/settings.json
+.idea/
+.DS_Store
+*.swp
+
+# keys and certificates never go in git
+*.key
+*.pem
+
+# private roadmap, never committed
+ROADMAP.md

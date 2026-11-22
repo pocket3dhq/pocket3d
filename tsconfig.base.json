@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": false,
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+    "experimentalDecorators": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "importHelpers": true,
+    "target": "es2021",
+    "module": "esnext",
+    "lib": ["es2022", "dom"],
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "incremental": true,
+    "strict": true,
+    "strictNullChecks": false,
+    "noImplicitAny": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@pocket3d/backend/*": ["apps/backend/src/*"],
+      "@pocket3d/frontend/*": ["apps/frontend/src/*"],
+      "@pocket3d/helpers/*": ["libraries/helpers/src/*"],
+      "@pocket3d/nestjs-libraries/*": ["libraries/nestjs-libraries/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "tmp"]
+}

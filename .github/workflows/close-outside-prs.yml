@@ -1,0 +1,30 @@
+# pocket3d doesn't accept code contributions (see CONTRIBUTING.md).
+# Closes pull requests from anyone who isn't the owner, an org member or a collaborator.
+# Dependabot's stay open: that's how dependency and security updates arrive
+# (dependabot.yml). Only GitHub's own app can have the login "dependabot[bot]".
+#
+# pull_request_target runs with a token that can close the PR. It is safe here only
+# because nothing from the PR is checked out or run: the job reads its number, nothing else.
+name: Close outside pull requests
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    if: >-
+      ${{ github.event.pull_request.user.login != 'dependabot[bot]'
+      && !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close with a note
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr close "$PR" --repo "$REPO" --comment "Thanks for taking the time! pocket3d doesn't accept code contributions, so this pull request is closed automatically. Bugs and ideas are very welcome as issues, and security reports go through SECURITY.md. You're also free to fork the project under the AGPL-3.0 license."

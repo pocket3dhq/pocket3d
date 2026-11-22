@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "../../libraries/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*spec.ts",
+    "../../libraries/**/*.spec.ts",
+    "../../libraries/helpers/src/utils/internal.fetch.ts"
+  ],
+  "compilerOptions": {
+    "module": "CommonJS",
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "incremental": true
+  }
+}

@@ -1,0 +1,15 @@
+# Keep the build context small and never ship local state or secrets
+**/node_modules
+**/dist
+**/.next
+**/*.tsbuildinfo
+.git
+.github
+.env
+.env.*
+!.env.example
+**/*.key
+**/*.pem
+uploads
+.playwright-mcp
+.DS_Store

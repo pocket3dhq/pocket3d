@@ -1,0 +1,20 @@
+@use './colors.scss';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background: var(--p3d-bg);
+  color: var(--p3d-text);
+  -webkit-text-size-adjust: 100%;
+}
+
+.p3d-stage {
+  background: radial-gradient(
+    120% 90% at 50% 30%,
+    var(--p3d-stage-top) 0%,
+    var(--p3d-stage-bottom) 100%
+  );
+}

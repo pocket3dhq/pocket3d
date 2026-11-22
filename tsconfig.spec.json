@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "types": ["jest", "node"],
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": [
+    "apps/backend/src/**/*.ts",
+    "apps/backend/test/**/*.ts",
+    "apps/cli/test/**/*.ts",
+    "apps/frontend/src/lib/api.ts",
+    "apps/frontend/src/lib/*.spec.ts",
+    "libraries/nestjs-libraries/src/**/*.ts",
+    "libraries/helpers/src/**/*.ts"
+  ],
+  "exclude": ["node_modules", "**/dist/**"]
+}
