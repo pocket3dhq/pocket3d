@@ -8,6 +8,8 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { onMotionChange, prefersStill } from './motion';
+import { SectionHeading } from './section.heading';
+import { Cube } from './cube';
 
 // The home page's second section: what pocket3d does, in three tabs.
 // Each tab plays a short CSS story; the bar under the tabs moves to the next
@@ -37,24 +39,9 @@ const at = (seconds: number): CSSProperties => ({
   animationDelay: `${seconds}s`,
 });
 
-function Cube({ size = 56 }: { size?: number }) {
-  return (
-    <div className="p3d-cube-wrap">
-      <div className="p3d-cube" style={{ '--s': `${size}px` } as CSSProperties}>
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
-      </div>
-    </div>
-  );
-}
-
 function Check() {
   return (
-    <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-accent text-accentText">
+    <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-success text-bg">
       <svg
         viewBox="0 0 12 12"
         className="h-[10px] w-[10px]"
@@ -74,7 +61,7 @@ function PublishStory() {
       <div className="p3d-pop" style={at(2.4)}>
         <Cube size={64} />
       </div>
-      <div className="w-[300px] max-w-full rounded-[14px] border border-line bg-bg p-[14px] text-left text-[13px]">
+      <div className="w-[300px] max-w-full rounded-panel border border-line bg-bg p-[14px] text-left text-[13px]">
         <div className="p3d-rise font-mono text-textMuted" style={at(0.2)}>
           <span className="text-accent">$</span> npx pocket3d publish fox.glb
         </div>
@@ -108,20 +95,20 @@ function ShareStory() {
         style={at(2.9)}
       >
         <div
-          className="p3d-rise w-fit rounded-[12px] bg-bgInner px-[10px] py-[6px]"
+          className="p3d-rise w-fit rounded-panel bg-bgInner px-[10px] py-[6px]"
           style={at(0.2)}
         >
           here&apos;s the fox for the client
         </div>
         <div
-          className="p3d-rise relative w-[150px] overflow-hidden rounded-[12px] border border-line bg-bgInner"
+          className="p3d-rise relative w-[150px] overflow-hidden rounded-panel border border-line bg-bgInner"
           style={at(0.9)}
         >
           <div className="p3d-stage flex h-[84px] items-center justify-center">
             <Cube size={30} />
           </div>
           <div className="p-[8px]">
-            <div className="font-semibold">Low-poly fox</div>
+            <div className="font-medium">Low-poly fox</div>
             <div className="text-[11px] text-textMuted">pocket3d.co</div>
           </div>
           <span
@@ -136,7 +123,9 @@ function ShareStory() {
         style={at(3.1)}
       >
         <Cube size={72} />
-        <div className="text-[11px] text-textMuted">drag to rotate</div>
+        <div className="font-mono text-[11px] text-textMuted">
+          drag to rotate
+        </div>
       </div>
     </div>
   );
@@ -146,8 +135,8 @@ const LIBRARY = ['fox', 'chair', 'robot', 'lamp', 'boat', 'test-3'];
 
 function ManageStory() {
   return (
-    <div className="w-[320px] max-w-full rounded-[14px] border border-line bg-bg p-[12px] text-left text-[12px]">
-      <div className="relative mb-[10px] h-[16px] text-textMuted">
+    <div className="w-[320px] max-w-full rounded-panel border border-line bg-bg p-[12px] text-left text-[12px]">
+      <div className="relative mb-[10px] h-[16px] font-mono text-textMuted">
         <span className="p3d-out absolute" style={at(3)}>
           Your library · 6 models
         </span>
@@ -162,12 +151,12 @@ function ManageStory() {
           return (
             <div
               key={name}
-              className={`relative rounded-[10px] border border-line bg-bgInner ${
+              className={`relative rounded-control border border-line bg-bgInner ${
                 deleted ? 'p3d-out' : ''
               }`}
               style={deleted ? at(2.8) : undefined}
             >
-              <div className="p3d-stage flex h-[54px] items-center justify-center rounded-t-[10px]">
+              <div className="p3d-stage flex h-[54px] items-center justify-center rounded-t-control">
                 <svg
                   viewBox="0 0 24 24"
                   className="h-[20px] w-[20px] text-accent"
@@ -186,7 +175,7 @@ function ManageStory() {
                       robot
                     </span>
                     <span
-                      className="p3d-rise absolute font-semibold text-accent"
+                      className="p3d-rise absolute font-medium text-accent"
                       style={at(1.3)}
                     >
                       Robot v2
@@ -198,7 +187,7 @@ function ManageStory() {
               </div>
               {deleted && (
                 <span
-                  className="p3d-pop absolute right-[6px] top-[6px] rounded-full bg-danger px-[6px] py-[1px] text-[10px] text-accentText"
+                  className="p3d-pop absolute right-[6px] top-[6px] rounded-control bg-danger px-[6px] py-[1px] font-mono text-[10px] text-bg"
                   style={at(2)}
                 >
                   delete
@@ -245,59 +234,70 @@ export function CoreSection() {
   const playing = seen && !still;
 
   return (
-    <section
-      ref={ref}
-      className="flex flex-col items-center gap-[20px] py-[32px] text-center"
-    >
-      <h2 className="text-balance text-[28px] font-bold leading-tight sm:text-[36px]">
-        One sentence to your agent. Your model is live.
-      </h2>
-      <div className="w-full max-w-[420px]">
+    <section ref={ref} className="flex flex-col gap-[32px]">
+      <SectionHeading
+        title="One sentence to your agent."
+        subtitle="Your model is live, shared and in your library."
+      />
+      <div className="grid border border-line lg:grid-cols-[1fr_1.5fr]">
         <div
           role="tablist"
-          className="grid grid-cols-3 rounded-full border border-line p-[4px] text-[14px]"
+          aria-orientation="vertical"
+          className="flex flex-col"
         >
-          {TABS.map((t, i) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={i === tab}
-              onClick={() => setTab(i)}
-              className={`rounded-full px-[12px] py-[8px] transition-colors ${
-                i === tab
-                  ? 'bg-accent font-semibold text-accentText'
-                  : 'text-textMuted hover:text-textColor'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t, i) => {
+            const active = i === tab;
+            return (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(i)}
+                className={`relative flex flex-col gap-[8px] border-b border-line px-[24px] py-[24px] text-left transition-colors last:border-b-0 lg:flex-1 lg:justify-center sm:px-[32px] ${
+                  active ? 'bg-bgInner/60' : 'hover:bg-bgInner/30'
+                }`}
+              >
+                <span
+                  className={`font-mono text-[18px] tracking-[-0.02em] ${
+                    active ? 'text-textColor' : 'text-textMuted'
+                  }`}
+                >
+                  {t.label}
+                </span>
+                <span
+                  className={`text-[15px] leading-relaxed ${
+                    active ? 'text-textMuted' : 'text-textMuted/60'
+                  }`}
+                >
+                  {t.line}
+                </span>
+                {/* how long until the next tab: fills, then moves on */}
+                <span className="absolute inset-x-0 bottom-[-1px] h-[2px] overflow-hidden">
+                  {active && playing && (
+                    <span
+                      key={tab}
+                      className="p3d-fill block h-full bg-accent"
+                      style={{
+                        animationDuration: `${TAB_MS}ms`,
+                        animationTimingFunction: 'linear',
+                      }}
+                      onAnimationEnd={() => setTab((tab + 1) % TABS.length)}
+                    />
+                  )}
+                  {active && !playing && (
+                    <span className="block h-full bg-accent" />
+                  )}
+                </span>
+              </button>
+            );
+          })}
         </div>
-        <div className="mx-[12px] mt-[10px] h-[2px] overflow-hidden rounded-full bg-line">
-          {playing && (
-            <div
-              key={tab}
-              className="p3d-fill h-full bg-accent"
-              style={{
-                animationDuration: `${TAB_MS}ms`,
-                animationTimingFunction: 'linear',
-              }}
-              onAnimationEnd={() => setTab((tab + 1) % TABS.length)}
-            />
-          )}
+        <div
+          aria-hidden
+          className="p3d-stage flex h-[380px] items-center justify-center overflow-hidden border-t border-line px-[16px] lg:h-auto lg:min-h-[420px] lg:border-l lg:border-t-0"
+        >
+          {(seen || still) && <Story key={current.id} />}
         </div>
-      </div>
-      <p
-        key={current.id}
-        className="p3d-rise max-w-[420px] text-balance text-[17px] leading-relaxed text-textColor"
-      >
-        {current.line}
-      </p>
-      <div
-        aria-hidden
-        className="flex h-[360px] w-full max-w-[640px] items-center justify-center overflow-hidden rounded-[20px] border border-line bg-bgInner px-[16px]"
-      >
-        {(seen || still) && <Story key={current.id} />}
       </div>
     </section>
   );

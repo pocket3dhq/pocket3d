@@ -1,9 +1,18 @@
 import Link from 'next/link';
+import { Logo } from '@pocket3d/frontend/components/ui/logo';
+import { AgentIcon } from './agent.icon';
+import { AGENT_DOORS, AGENTS } from './agents';
 
 // The home page footer: a big wordmark, a short tagline, a few link columns.
-// Only links to pages that exist; REPO_URL / DEMO_URL ones show when they're set
+// Only links to pages that exist; the demo link shows when DEMO_URL is set
 
-type FooterLink = { label: string; href: string; external?: boolean };
+type FooterLink = {
+  label: string;
+  href: string;
+  external?: boolean;
+  icon?: string;
+  agent?: boolean;
+};
 
 export function SiteFooter({
   repoUrl,
@@ -23,7 +32,25 @@ export function SiteFooter({
       ],
     },
     {
+      // every agent opens the Connect page, where its setup is
       title: 'AI agents',
+      links: [
+        ...AGENTS.map((a) => ({
+          label: a.name,
+          href: '/dashboard/keys',
+          icon: a.icon,
+          agent: true,
+        })),
+        ...AGENT_DOORS.map((d) => ({
+          label: d.name,
+          href: d.href,
+          icon: d.icon,
+          agent: true,
+        })),
+      ],
+    },
+    {
+      title: 'Connect',
       links: [
         { label: 'Connect your agent', href: '/dashboard/keys' },
         { label: 'Agent instructions', href: '/skill.md' },
@@ -49,24 +76,23 @@ export function SiteFooter({
   ];
 
   return (
-    <footer className="mt-[48px] border-t border-line">
+    <footer className="mt-[96px] border-t border-line">
       <div
         aria-hidden
         className="h-[15vw] max-h-[200px] overflow-hidden text-center"
       >
-        <span className="block select-none text-[21vw] font-bold leading-none tracking-tight text-accent sm:text-[min(24vw,270px)]">
+        <span className="block select-none font-mono text-[19vw] font-medium leading-none tracking-[-0.06em] text-bgInner sm:text-[min(19vw,240px)]">
           pocket3d
         </span>
       </div>
       <div className="border-t border-line">
-        <div className="mx-auto grid w-full max-w-[880px] grid-cols-3 gap-[24px] px-[16px] py-[40px] sm:grid-cols-[1.4fr_1fr_1fr_1fr] sm:gap-[32px]">
-          <div className="col-span-3 flex flex-col gap-[8px] sm:col-span-1">
-            <div className="font-semibold tracking-wide text-accent">
-              pocket3d
-            </div>
+        <div className="mx-auto grid w-full max-w-[1200px] grid-cols-2 gap-[32px] px-[16px] py-[48px] sm:px-[24px] lg:grid-cols-[1.6fr_1fr_1.2fr_1fr_1fr]">
+          <div className="col-span-2 flex flex-col gap-[8px] lg:col-span-1">
+            <Logo />
             <p className="text-[14px] leading-relaxed text-textMuted">
-              Publish and manage your 3D models with your AI agent. Hosted cloud
-              or open source.
+              pocket3d is an open-source agentic 3D digital asset management
+              platform that lets you publish and manage your 3D assets from your
+              favorite AI agents.
             </p>
           </div>
           {columns.map((col) => (
@@ -75,14 +101,16 @@ export function SiteFooter({
               aria-label={col.title}
               className="flex flex-col gap-[10px] text-[14px]"
             >
-              <div className="font-semibold text-textColor">{col.title}</div>
+              <div className="font-mono text-[12px] uppercase tracking-[0.04em] text-textMuted">
+                {col.title}
+              </div>
               {col.links.map((l) =>
                 l.external ? (
                   <a
                     key={l.label}
                     href={l.href}
                     rel="noopener"
-                    className="text-textMuted hover:text-textColor"
+                    className="text-textColor/80 hover:text-textColor"
                   >
                     {l.label}
                   </a>
@@ -90,8 +118,11 @@ export function SiteFooter({
                   <Link
                     key={l.label}
                     href={l.href}
-                    className="text-textMuted hover:text-textColor"
+                    className="flex items-center gap-[10px] text-textColor/80 hover:text-textColor"
                   >
+                    {l.agent && (
+                      <AgentIcon name={l.label} icon={l.icon} size={16} />
+                    )}
                     {l.label}
                   </Link>
                 )
@@ -99,9 +130,22 @@ export function SiteFooter({
             </nav>
           ))}
         </div>
-        <div className="mx-auto flex w-full max-w-[880px] flex-wrap justify-between gap-[8px] border-t border-line px-[16px] py-[20px] text-[12px] text-textMuted">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap justify-between gap-[8px] border-t border-line px-[16px] py-[20px] font-mono text-[12px] text-textMuted sm:px-[24px]">
           <span>© pocket3d, {new Date().getFullYear()}</span>
-          <span>AGPL-3.0 · hosted cloud + open source</span>
+          <span className="flex items-center gap-[14px]">
+            AGPL-3.0 · hosted cloud + open source
+            {!!repoUrl && (
+              <a
+                href={repoUrl}
+                rel="noopener"
+                aria-label="pocket3d on GitHub"
+                className="flex items-center gap-[6px] text-textColor/80 hover:text-textColor"
+              >
+                <AgentIcon name="GitHub" icon="github" size={16} />
+                GitHub
+              </a>
+            )}
+          </span>
         </div>
       </div>
     </footer>

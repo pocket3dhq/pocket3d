@@ -90,7 +90,7 @@ const ModelRow: FC<{ asset: OwnedAsset; onChange: () => void }> = ({
   return (
     <li className="flex flex-col gap-[10px] border-b border-line py-[14px] last:border-b-0">
       <div className="flex items-start gap-[14px]">
-        <div className="h-[56px] w-[56px] shrink-0 overflow-hidden rounded-[10px] border border-line bg-bg">
+        <div className="h-[56px] w-[56px] shrink-0 overflow-hidden rounded-control border border-line bg-bgInner">
           {asset.coverPath && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -109,7 +109,7 @@ const ModelRow: FC<{ asset: OwnedAsset; onChange: () => void }> = ({
                 value={title}
                 maxLength={120}
                 onChange={(e) => setTitle(e.target.value)}
-                className="min-w-0 flex-1 rounded-[8px] border border-line bg-bgInner px-[10px] py-[6px] text-[14px] outline-none focus:border-accent"
+                className="min-w-0 flex-1 rounded-control border border-line bg-bgInner px-[10px] py-[6px] text-[14px] outline-none focus:border-accent"
                 autoFocus
               />
               <Button type="submit" loading={busy}>
@@ -199,7 +199,7 @@ export const ModelsList: FC = () => {
           title="No models yet"
           description="Drop a .glb above, or publish one from your terminal or your AI agent:"
         >
-          <pre className="overflow-x-auto rounded-[10px] border border-line bg-bg p-[14px] font-mono text-[13px]">
+          <pre className="overflow-x-auto rounded-panel border border-line bg-bgInner p-[14px] font-mono text-[13px]">
             npx -y pocket3d publish model.glb --title &quot;My model&quot;
           </pre>
           <p className="text-[14px] text-textMuted">

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { FC } from 'react';
+import { Logo } from '@pocket3d/frontend/components/ui/logo';
 
 const LINKS = [
   { href: '/dashboard', label: 'Models' },
@@ -15,8 +16,8 @@ export const DashboardNav: FC<{ email: string }> = ({ email }) => {
   return (
     <header className="flex flex-col gap-[14px] border-b border-line pb-[14px] sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-[20px]">
-        <Link href="/" className="text-[14px] font-semibold tracking-wide text-accent">
-          pocket3d
+        <Link href="/" aria-label="pocket3d home">
+          <Logo />
         </Link>
         <nav className="flex gap-[4px]" aria-label="Dashboard">
           {LINKS.map((link) => {
@@ -26,8 +27,10 @@ export const DashboardNav: FC<{ email: string }> = ({ email }) => {
                 key={link.href}
                 href={link.href}
                 aria-current={active ? 'page' : undefined}
-                className={`rounded-[8px] px-[10px] py-[6px] text-[14px] ${
-                  active ? 'bg-bgInner text-textColor' : 'text-textMuted hover:text-textColor'
+                className={`rounded-control px-[10px] py-[6px] font-mono text-[13px] uppercase tracking-[0.02em] ${
+                  active
+                    ? 'bg-bgInner text-textColor'
+                    : 'text-textMuted hover:text-textColor'
                 }`}
               >
                 {link.label}

@@ -6,16 +6,34 @@
 
 html,
 body {
-  background: var(--p3d-bg);
-  color: var(--p3d-text);
+  background: rgb(var(--p3d-bg));
+  color: rgb(var(--p3d-text));
   -webkit-text-size-adjust: 100%;
+}
+
+::selection {
+  background: rgb(var(--p3d-accent) / 0.35);
+}
+
+// a faint dot grid, behind heroes
+.p3d-dots {
+  background-image: radial-gradient(
+    rgb(var(--p3d-text) / 0.09) 1px,
+    transparent 1px
+  );
+  background-size: 16px 16px;
+  mask-image: radial-gradient(
+    ellipse 70% 60% at 50% 40%,
+    black 30%,
+    transparent 75%
+  );
 }
 
 .p3d-stage {
   background: radial-gradient(
     120% 90% at 50% 30%,
-    var(--p3d-stage-top) 0%,
-    var(--p3d-stage-bottom) 100%
+    rgb(var(--p3d-stage-top)) 0%,
+    rgb(var(--p3d-stage-bottom)) 100%
   );
 }
 
@@ -80,8 +98,8 @@ body {
   > i {
     position: absolute;
     inset: 0;
-    border: 1.5px solid var(--p3d-accent);
-    background: color-mix(in srgb, var(--p3d-accent) 16%, transparent);
+    border: 1.5px solid rgb(var(--p3d-accent));
+    background: rgb(var(--p3d-accent) / 0.16);
   }
   > i:nth-child(1) {
     transform: translateZ(calc(var(--s) / 2));
@@ -180,5 +198,56 @@ body {
   .p3d-out {
     animation: none;
     display: none;
+  }
+}
+
+// home page agents row: slides left forever, fades at the edges
+@keyframes p3d-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+.p3d-marquee {
+  animation: p3d-marquee 60s linear infinite;
+}
+.p3d-marquee:hover {
+  animation-play-state: paused;
+}
+.p3d-marquee-mask {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 14%,
+    black 86%,
+    transparent
+  );
+}
+// a 1px rule with a small + where it crosses the centre
+.p3d-rule-mark {
+  height: 1px;
+  background: rgb(var(--p3d-line));
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    background: rgb(var(--p3d-text-muted) / 0.6);
+  }
+  &::before {
+    top: -6px;
+    width: 1px;
+    height: 13px;
+  }
+  &::after {
+    top: 0;
+    width: 13px;
+    height: 1px;
+    margin-left: -6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .p3d-marquee {
+    animation: none;
   }
 }

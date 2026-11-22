@@ -45,7 +45,7 @@ services:
       # TRUSTED_IP_HEADER: 'cf-connecting-ip'   # e.g. behind Cloudflare
 
       # === Optional
-      # REPO_URL: ''   # shows an "open source" link on the home page and viewer
+      # REPO_URL: ''   # source code link on the home page and viewer (default: the public repo)
       # DEMO_URL: ''   # a MAIN_URL/m/<id> link shown on the home page
     volumes:
       - pocket3d-uploads:/uploads

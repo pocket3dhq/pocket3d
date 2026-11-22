@@ -3,7 +3,11 @@
 import { DragEvent, FC, FormEvent, useId, useState } from 'react';
 import { useSWRConfig } from 'swr';
 import { apiFetch } from '@pocket3d/frontend/lib/api';
-import { Button } from '@pocket3d/frontend/components/ui/button';
+import {
+  BUTTON_BASE,
+  BUTTON_VARIANTS,
+  Button,
+} from '@pocket3d/frontend/components/ui/button';
 import { Card } from '@pocket3d/frontend/components/ui/card';
 import { Field } from '@pocket3d/frontend/components/ui/field';
 import { Notice } from '@pocket3d/frontend/components/ui/notice';
@@ -121,7 +125,7 @@ export const UploadModel: FC = () => {
         <Notice tone="info">
           “{state.title}” is live. Anyone with this link can open it:
         </Notice>
-        <div className="break-all rounded-[10px] border border-line bg-bg px-[12px] py-[10px] font-mono text-[14px]">
+        <div className="break-all rounded-control border border-line bg-bgInner px-[12px] py-[10px] font-mono text-[14px]">
           {state.url}
         </div>
         <div className="flex flex-wrap gap-[8px]">
@@ -130,7 +134,7 @@ export const UploadModel: FC = () => {
             href={state.url}
             target="_blank"
             rel="noopener"
-            className="inline-flex items-center rounded-[10px] bg-accent px-[14px] py-[9px] text-[14px] font-semibold text-accentText hover:opacity-90"
+            className={`${BUTTON_BASE} ${BUTTON_VARIANTS.primary}`}
           >
             Open the model
           </a>
@@ -155,10 +159,10 @@ export const UploadModel: FC = () => {
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          className={`flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-[6px] rounded-[14px] border-2 border-dashed px-[16px] py-[20px] text-center transition ${
+          className={`flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-[6px] rounded-panel border border-dashed px-[16px] py-[20px] text-center transition ${
             dragging
               ? 'border-accent bg-accent/10'
-              : 'border-line bg-bg/60 hover:border-textMuted'
+              : 'border-textColor/20 bg-bgInner/50 hover:border-textColor/40'
           }`}
         >
           {file ? (
@@ -211,7 +215,7 @@ export const UploadModel: FC = () => {
                     whose text follows the browser's language */}
                 <label
                   htmlFor={coverId}
-                  className="inline-flex cursor-pointer items-center rounded-[10px] border border-line bg-bgInner px-[12px] py-[8px] text-[14px] font-semibold hover:border-textMuted has-[:focus-visible]:border-accent"
+                  className={`${BUTTON_BASE} ${BUTTON_VARIANTS.secondary} cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/40`}
                 >
                   {cover ? 'Change image' : 'Choose an image'}
                   <input

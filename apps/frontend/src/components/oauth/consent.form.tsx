@@ -44,7 +44,7 @@ export const ConsentForm: FC<{
 
   return (
     <div className="flex flex-col gap-[20px]">
-      <div className="flex flex-col gap-[10px] rounded-[14px] border border-line bg-bgInner/60 p-[16px] text-[14px]">
+      <div className="flex flex-col gap-[10px] border border-line bg-bgInner/50 p-[16px] text-[14px]">
         <p>
           <strong>{clientName}</strong> wants to use your pocket3d account <strong>{orgName}</strong> ({email}).
         </p>

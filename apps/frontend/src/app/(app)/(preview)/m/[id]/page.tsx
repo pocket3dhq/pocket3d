@@ -4,6 +4,7 @@ import { cache } from 'react';
 import { internalFetch } from '@pocket3d/helpers/utils/internal.fetch';
 import { ModelViewer } from '@pocket3d/frontend/components/viewer/model.viewer';
 import { ViewerChrome } from '@pocket3d/frontend/components/viewer/viewer.chrome';
+import { repoUrl } from '@pocket3d/frontend/lib/repo';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,8 @@ const getAsset = cache(async (id: string): Promise<PublicAsset | null> => {
 const shareUrl = (id: string) =>
   `${(process.env.MAIN_URL || '').replace(/\/+$/, '')}/m/${id}`;
 
-const DESCRIPTION = 'Interactive 3D model. Drag to orbit, pinch to zoom. Shared with pocket3d.';
+const DESCRIPTION =
+  'Interactive 3D model. Drag to orbit, pinch to zoom. Shared with pocket3d.';
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
@@ -43,7 +45,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const url = shareUrl(asset.id);
-  const images = asset.coverPath ? [{ url: asset.coverPath, alt: asset.title }] : [];
+  const images = asset.coverPath
+    ? [{ url: asset.coverPath, alt: asset.title }]
+    : [];
   return {
     title: `${asset.title} · pocket3d`,
     description: DESCRIPTION,
@@ -76,7 +80,7 @@ export default async function ModelPage({ params }: Props) {
   }
 
   return (
-    <ViewerChrome title={asset.title} repoUrl={process.env.REPO_URL}>
+    <ViewerChrome title={asset.title} repoUrl={repoUrl()}>
       <ModelViewer src={asset.path} title={asset.title} />
     </ViewerChrome>
   );

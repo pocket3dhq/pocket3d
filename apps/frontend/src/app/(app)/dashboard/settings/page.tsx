@@ -9,7 +9,7 @@ export default async function SettingsPage() {
   }
   return (
     <main className="flex flex-col gap-[16px]">
-      <h1 className="text-[24px] font-bold">Settings</h1>
+      <h1 className="text-[28px] font-semibold tracking-heading">Settings</h1>
       <ProfileForm email={self.email} name={self.name} />
       <PasswordForm />
       <DeleteAccountForm />

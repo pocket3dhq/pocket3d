@@ -1,16 +1,19 @@
 // Design tokens. Tailwind maps them in tailwind.config.cjs (bg-bg, text-textMuted...)
+// Each colour is stored as "R G B" channels, so Tailwind's opacity modifiers
+// work (bg-accent/10); plain CSS reads them as rgb(var(--p3d-accent))
 // pocket3d is dark-only for now: a 3D viewer reads best on a dark backdrop
 :root {
-  --p3d-bg: #0b0b10;
-  --p3d-bg-inner: #15151d;
-  --p3d-line: #26262f;
-  --p3d-text: #f4f4f6;
-  --p3d-text-muted: #9a9aa6;
-  --p3d-accent: #8b5cf6;
-  --p3d-accent-text: #ffffff;
-  --p3d-danger: #f87171;
+  --p3d-bg: 10 10 10; // the page
+  --p3d-bg-inner: 22 22 22; // panels, inputs, code
+  --p3d-line: 37 37 37; // 1px dividers and borders
+  --p3d-text: 255 255 255;
+  --p3d-text-muted: 162 162 162;
+  --p3d-accent: 0 128 255;
+  --p3d-accent-text: 255 255 255;
+  --p3d-danger: 237 107 95;
+  --p3d-success: 46 204 113;
 
   // the stage behind the model
-  --p3d-stage-top: #1c1b26;
-  --p3d-stage-bottom: #08080c;
+  --p3d-stage-top: 24 24 24;
+  --p3d-stage-bottom: 6 6 6;
 }

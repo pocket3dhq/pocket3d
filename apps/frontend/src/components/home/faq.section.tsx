@@ -1,11 +1,17 @@
+import { SectionHeading } from './section.heading';
+
 // The home page FAQ: native <details>, so it opens without JavaScript and
 // works with a keyboard and screen readers. Keep answers true to what the
 // app does today (formats, limits, who can see a model)
 
 const FAQ: { q: string; a: string }[] = [
   {
+    q: 'What is pocket3d?',
+    a: 'pocket3d is an open-source agentic 3D digital asset management platform that lets you publish and manage your 3D assets from your favorite AI agents. Every model you publish gets a link anyone can open in an interactive 3D viewer, and lands in your library, where you can find, rename or take it down.',
+  },
+  {
     q: 'Which AI agents work with pocket3d?',
-    a: 'Claude Code, Codex and Cursor publish through the CLI (npx pocket3d). Claude on claude.ai and Claude Desktop connect through the MCP server. Any agent that can run a shell command or talk to an MCP server can use it. The Connect page in your dashboard gives you the setup for each one.',
+    a: 'Any agent that can run a shell command or add a remote MCP server. Coding and computer agents like Claude Code, Codex, Cursor, Gemini, Grok Build, OpenClaw, NanoClaw and Hermes Agent publish through the CLI (npx pocket3d). Chat agents like ChatGPT, Claude, Perplexity Computer, Manus and Grok Bot add the pocket3d MCP server as a connector and sign in, no API key needed. The Connect page in your dashboard gives you the setup.',
   },
   {
     q: 'Do I need an AI agent?',
@@ -53,14 +59,12 @@ export function FaqSection() {
   };
 
   return (
-    <section className="flex flex-col items-center gap-[24px] py-[32px]">
-      <h2 className="text-center text-[28px] font-bold leading-tight sm:text-[36px]">
-        Frequently asked questions
-      </h2>
-      <div className="w-full max-w-[680px] divide-y divide-line rounded-[16px] border border-line">
+    <section className="grid gap-[32px] lg:grid-cols-[1fr_2fr] lg:gap-[64px]">
+      <SectionHeading title="Questions." subtitle="Answered." />
+      <div className="divide-y divide-line border-y border-line">
         {FAQ.map(({ q, a }) => (
           <details key={q} className="group">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-[16px] px-[20px] py-[16px] text-[16px] font-semibold hover:text-accent [&::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-[16px] py-[20px] text-[17px] font-medium tracking-[-0.01em] hover:text-accent [&::-webkit-details-marker]:hidden">
               {q}
               <svg
                 viewBox="0 0 16 16"
@@ -73,7 +77,7 @@ export function FaqSection() {
                 <path d="M8 2.5v11M2.5 8h11" />
               </svg>
             </summary>
-            <p className="p3d-rise px-[20px] pb-[18px] text-[15px] leading-relaxed text-textMuted">
+            <p className="p3d-rise max-w-[640px] pb-[20px] text-[15px] leading-relaxed text-textMuted">
               {a}
             </p>
           </details>

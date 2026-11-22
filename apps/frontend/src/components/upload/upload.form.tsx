@@ -1,7 +1,11 @@
 'use client';
 
 import { DragEvent, FC, FormEvent, useEffect, useId, useState } from 'react';
-import { Button } from '@pocket3d/frontend/components/ui/button';
+import {
+  BUTTON_BASE,
+  BUTTON_VARIANTS,
+  Button,
+} from '@pocket3d/frontend/components/ui/button';
 import { Field } from '@pocket3d/frontend/components/ui/field';
 import { Notice } from '@pocket3d/frontend/components/ui/notice';
 import { CopyButton } from '@pocket3d/frontend/components/dashboard/copy.button';
@@ -97,14 +101,14 @@ export const UploadForm: FC<{
         <Notice tone="info">
           “{state.title}” is published. Anyone with this link can open it:
         </Notice>
-        <div className="break-all rounded-[10px] border border-line bg-bgInner px-[12px] py-[10px] font-mono text-[14px]">
+        <div className="break-all rounded-control border border-line bg-bgInner px-[12px] py-[10px] font-mono text-[14px]">
           {state.url}
         </div>
         <div className="flex gap-[8px]">
           <CopyButton value={state.url} label="Copy link" />
           <a
             href={state.url}
-            className="inline-flex items-center rounded-[10px] bg-accent px-[14px] py-[9px] text-[14px] font-semibold text-accentText hover:opacity-90"
+            className={`${BUTTON_BASE} ${BUTTON_VARIANTS.primary}`}
           >
             Open the model
           </a>
@@ -140,10 +144,10 @@ export const UploadForm: FC<{
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`flex min-h-[140px] cursor-pointer flex-col items-center justify-center gap-[6px] rounded-[14px] border-2 border-dashed px-[16px] py-[24px] text-center transition ${
+        className={`flex min-h-[140px] cursor-pointer flex-col items-center justify-center gap-[6px] rounded-panel border border-dashed px-[16px] py-[24px] text-center transition ${
           dragging
             ? 'border-accent bg-accent/10'
-            : 'border-line bg-bgInner/60 hover:border-textMuted'
+            : 'border-textColor/20 bg-bgInner/50 hover:border-textColor/40'
         }`}
       >
         {file ? (

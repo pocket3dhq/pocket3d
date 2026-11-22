@@ -6,27 +6,38 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        bg: 'var(--p3d-bg)',
-        bgInner: 'var(--p3d-bg-inner)',
-        line: 'var(--p3d-line)',
-        textColor: 'var(--p3d-text)',
-        textMuted: 'var(--p3d-text-muted)',
-        accent: 'var(--p3d-accent)',
-        accentText: 'var(--p3d-accent-text)',
-        danger: 'var(--p3d-danger)',
+        bg: 'rgb(var(--p3d-bg) / <alpha-value>)',
+        bgInner: 'rgb(var(--p3d-bg-inner) / <alpha-value>)',
+        line: 'rgb(var(--p3d-line) / <alpha-value>)',
+        textColor: 'rgb(var(--p3d-text) / <alpha-value>)',
+        textMuted: 'rgb(var(--p3d-text-muted) / <alpha-value>)',
+        accent: 'rgb(var(--p3d-accent) / <alpha-value>)',
+        accentText: 'rgb(var(--p3d-accent-text) / <alpha-value>)',
+        danger: 'rgb(var(--p3d-danger) / <alpha-value>)',
+        success: 'rgb(var(--p3d-success) / <alpha-value>)',
       },
+      // Inter for text, IBM Plex Mono for buttons, labels, card titles and
+      // code (both loaded in app/layout.tsx with next/font)
       fontFamily: {
-        sans: [
-          'ui-sans-serif',
-          'system-ui',
-          '-apple-system',
-          'Segoe UI',
-          'Roboto',
-          'Helvetica Neue',
-          'Arial',
-          'sans-serif',
+        sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: [
+          'var(--font-mono)',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'monospace',
         ],
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+      },
+      borderRadius: {
+        // buttons, inputs, chips
+        control: '4px',
+        // code blocks and floating panels
+        panel: '10px',
+      },
+      letterSpacing: {
+        // big headings
+        display: '-0.04em',
+        heading: '-0.02em',
       },
     },
   },

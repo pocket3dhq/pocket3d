@@ -2,6 +2,8 @@
 
 import { ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { onMotionChange, prefersStill } from './motion';
+import { AgentIcon } from './agent.icon';
+import { AGENTS } from './agents';
 
 // The home page hero: the agent name in the headline rotates, and a mock chat
 // below plays what that agent does with pocket3d, one step at a time.
@@ -9,6 +11,9 @@ import { onMotionChange, prefersStill } from './motion';
 
 type Step = { text: string; link?: string };
 type Scene = { agent: string; prompt: string; steps: Step[]; preview?: string };
+
+// the logo shown next to an agent's name
+const iconOf = (agent: string) => AGENTS.find((a) => a.name === agent)?.icon;
 
 const SCENES: Scene[] = [
   {
@@ -80,41 +85,69 @@ export function AgentHero({ children }: { children?: ReactNode }) {
   const shown = still ? last : step;
 
   return (
-    <div className="flex flex-col items-center gap-[28px] text-center">
-      <h1 className="text-balance text-[34px] font-bold leading-tight sm:text-[48px]">
-        Publish and manage your 3D models
-        <br />
-        with{' '}
-        <span key={current.agent} className="p3d-swap inline-block text-accent">
-          {current.agent}
-        </span>
-      </h1>
-      <p className="max-w-[560px] text-[16px] leading-relaxed text-textMuted">
-        Every model gets a link anyone can open, on any phone or computer, with
-        a proper preview when you paste it in a chat.
-      </p>
-      {children}
+    <section className="relative isolate flex flex-col items-center gap-[48px] pt-[32px] text-center sm:pt-[64px]">
+      <div
+        aria-hidden
+        className="p3d-dots pointer-events-none absolute inset-x-0 -top-[40px] sm:-inset-x-[24px] bottom-0 -z-10"
+      />
+      <div className="flex flex-col items-center gap-[28px]">
+        {/* what pocket3d is, in a few words, above what it does */}
+        <p className="inline-flex items-center gap-[8px] rounded-control border border-line bg-bgInner/60 px-[12px] py-[6px] font-mono text-[12px] uppercase tracking-[0.04em] text-textMuted">
+          <span className="h-[6px] w-[6px] rounded-full bg-accent" />
+          Open-source agentic 3D asset management
+        </p>
+        <h1 className="text-[34px] font-semibold leading-[1.05] tracking-display sm:text-[64px]">
+          {/* a fixed first line; the second holds the agent name, which
+              changes width as it rotates */}
+          Publish and manage
+          <br />
+          your 3D models with{' '}
+          {/* below xl the agent gets its own line, so the headline keeps the
+              same height whichever name (and logo) is showing */}
+          <br className="xl:hidden" />
+          <span
+            key={current.agent}
+            className="p3d-swap inline-flex items-center gap-[0.22em] whitespace-nowrap text-accent"
+          >
+            <AgentIcon
+              name={current.agent}
+              icon={iconOf(current.agent)}
+              size="0.82em"
+            />
+            {current.agent}.
+          </span>
+        </h1>
+        <p className="max-w-[560px] text-balance text-[18px] leading-[1.5] tracking-[-0.01em] text-textMuted sm:text-[20px]">
+          Every model gets a link anyone can open, on any phone or computer,
+          with a proper preview when you paste it in a chat.
+        </p>
+        {children}
+      </div>
 
       <div
         aria-hidden
-        className="w-full max-w-[560px] overflow-hidden rounded-[16px] border border-line bg-bgInner text-left text-[14px]"
+        className="w-full max-w-[640px] overflow-hidden rounded-panel border border-line bg-bgInner text-left text-[14px]"
       >
-        <div className="flex items-center gap-[8px] border-b border-line px-[16px] py-[12px] font-semibold">
-          <span className="h-[8px] w-[8px] rounded-full bg-accent" />
+        <div className="flex items-center gap-[8px] border-b border-line px-[16px] py-[12px] font-mono text-[13px]">
+          <AgentIcon
+            name={current.agent}
+            icon={iconOf(current.agent)}
+            size={14}
+          />
           <span key={current.agent} className="p3d-swap">
             {current.agent}
           </span>
         </div>
-        <div className="flex min-h-[320px] flex-col gap-[12px] p-[16px]">
+        <div className="flex min-h-[320px] flex-col gap-[14px] p-[20px]">
           <div
             key={current.prompt}
-            className="p3d-rise ml-auto max-w-[85%] rounded-[14px] bg-bg px-[14px] py-[10px] leading-relaxed"
+            className="p3d-rise ml-auto max-w-[85%] rounded-panel border border-line bg-bg px-[14px] py-[10px] leading-relaxed"
           >
             {current.prompt}
           </div>
           {shown >= 1 && (
-            <div className="p3d-rise w-fit rounded-full border border-line px-[10px] py-[4px] text-[12px] text-textMuted">
-              Using <span className="text-accent">pocket3d</span>
+            <div className="p3d-rise w-fit rounded-control bg-accent/15 px-[8px] py-[4px] font-mono text-[12px] text-accent">
+              using pocket3d
             </div>
           )}
           {current.steps.map((s, i) => {
@@ -129,7 +162,7 @@ export function AgentHero({ children }: { children?: ReactNode }) {
                 <span
                   className={`mt-[2px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${
                     done
-                      ? 'border-accent bg-accent text-accentText'
+                      ? 'border-success bg-success text-bg'
                       : 'p3d-spin border-line border-t-accent'
                   }`}
                 >
@@ -157,8 +190,8 @@ export function AgentHero({ children }: { children?: ReactNode }) {
             );
           })}
           {current.preview && shown >= last && (
-            <div className="p3d-rise ml-[28px] flex w-fit items-center gap-[12px] rounded-[12px] border border-line bg-bg p-[10px] pr-[16px]">
-              <div className="p3d-stage flex h-[44px] w-[44px] items-center justify-center rounded-[8px]">
+            <div className="p3d-rise ml-[28px] flex w-fit items-center gap-[12px] rounded-panel border border-line bg-bg p-[10px] pr-[16px]">
+              <div className="p3d-stage flex h-[44px] w-[44px] items-center justify-center rounded-control">
                 <svg
                   viewBox="0 0 24 24"
                   className="h-[22px] w-[22px] text-accent"
@@ -171,8 +204,8 @@ export function AgentHero({ children }: { children?: ReactNode }) {
                 </svg>
               </div>
               <div>
-                <div className="font-semibold">{current.preview}</div>
-                <div className="text-[12px] text-textMuted">
+                <div className="font-medium">{current.preview}</div>
+                <div className="font-mono text-[12px] text-textMuted">
                   pocket3d.co · interactive 3D
                 </div>
               </div>
@@ -180,6 +213,6 @@ export function AgentHero({ children }: { children?: ReactNode }) {
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
