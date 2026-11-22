@@ -4,7 +4,7 @@
 #   /api/*      → backend (NestJS), prefix stripped
 #   /uploads/*  → files on disk (STORAGE_PROVIDER=local)
 #   /*          → frontend (Next.js)
-FROM node:22-bookworm-slim
+FROM node:26-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
