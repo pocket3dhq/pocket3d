@@ -48,6 +48,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: `${asset.title} · pocket3d`,
     description: DESCRIPTION,
     alternates: { canonical: url },
+    // the link is the only permission on a model: keep it out of search
+    // results even when someone posts it publicly. Link previews still work
+    robots: { index: false, follow: false },
     openGraph: {
       type: 'website',
       siteName: 'pocket3d',

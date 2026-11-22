@@ -18,3 +18,167 @@ body {
     var(--p3d-stage-bottom) 100%
   );
 }
+
+// home page hero: the rotating agent name, chat lines rising in, the step spinner
+@keyframes p3d-swap {
+  from {
+    opacity: 0;
+    transform: translateY(0.35em);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes p3d-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes p3d-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.p3d-swap {
+  animation: p3d-swap 0.5s ease-out both;
+}
+.p3d-rise {
+  animation: p3d-rise 0.35s ease-out both;
+}
+.p3d-spin {
+  animation: p3d-spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .p3d-swap,
+  .p3d-rise,
+  .p3d-spin {
+    animation: none;
+  }
+}
+
+// home page "core" section: a spinning CSS cube, bars that fill, things that
+// pop in or leave. Delays are set inline, so one tab plays as a short story
+.p3d-cube-wrap {
+  perspective: 500px;
+}
+.p3d-cube {
+  --s: 56px;
+  position: relative;
+  width: var(--s);
+  height: var(--s);
+  transform-style: preserve-3d;
+  animation: p3d-cube 7s linear infinite;
+
+  > i {
+    position: absolute;
+    inset: 0;
+    border: 1.5px solid var(--p3d-accent);
+    background: color-mix(in srgb, var(--p3d-accent) 16%, transparent);
+  }
+  > i:nth-child(1) {
+    transform: translateZ(calc(var(--s) / 2));
+  }
+  > i:nth-child(2) {
+    transform: rotateY(180deg) translateZ(calc(var(--s) / 2));
+  }
+  > i:nth-child(3) {
+    transform: rotateY(90deg) translateZ(calc(var(--s) / 2));
+  }
+  > i:nth-child(4) {
+    transform: rotateY(-90deg) translateZ(calc(var(--s) / 2));
+  }
+  > i:nth-child(5) {
+    transform: rotateX(90deg) translateZ(calc(var(--s) / 2));
+  }
+  > i:nth-child(6) {
+    transform: rotateX(-90deg) translateZ(calc(var(--s) / 2));
+  }
+}
+@keyframes p3d-cube {
+  from {
+    transform: rotateX(-24deg) rotateY(0deg);
+  }
+  to {
+    transform: rotateX(-24deg) rotateY(360deg);
+  }
+}
+@keyframes p3d-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes p3d-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  70% {
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes p3d-out {
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+@keyframes p3d-tap {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+.p3d-fill {
+  transform-origin: left;
+  animation: p3d-fill 1.4s ease-in-out both;
+}
+.p3d-pop {
+  animation: p3d-pop 0.45s ease-out both;
+}
+.p3d-out {
+  animation: p3d-out 0.4s ease-in forwards;
+}
+.p3d-tap {
+  animation: p3d-tap 0.7s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .p3d-cube {
+    animation: none;
+    transform: rotateX(-24deg) rotateY(35deg);
+  }
+  .p3d-fill,
+  .p3d-pop,
+  .p3d-tap {
+    animation: none;
+  }
+  .p3d-tap {
+    display: none;
+  }
+  // what leaves in the story is gone in the still picture
+  .p3d-out {
+    animation: none;
+    display: none;
+  }
+}
