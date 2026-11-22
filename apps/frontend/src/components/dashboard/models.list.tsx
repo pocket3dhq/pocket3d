@@ -197,7 +197,7 @@ export const ModelsList: FC = () => {
         <StorageMeter used={data.storage.used} limit={data.storage.limit} />
         <Card
           title="No models yet"
-          description="Publish one from your terminal or your AI agent:"
+          description="Drop a .glb above, or publish one from your terminal or your AI agent:"
         >
           <pre className="overflow-x-auto rounded-[10px] border border-line bg-bg p-[14px] font-mono text-[13px]">
             npx -y pocket3d publish model.glb --title &quot;My model&quot;
