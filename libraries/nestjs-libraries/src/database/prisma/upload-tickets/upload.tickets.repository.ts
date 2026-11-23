@@ -1,13 +1,48 @@
 import { Injectable } from '@nestjs/common';
+import { VersionSource } from '@prisma/client';
 import { PrismaRepository } from '@pocket3d/nestjs-libraries/database/prisma/prisma.service';
+
+export interface NewUploadTicket {
+  organizationId: string;
+  tokenHash: string;
+  title?: string;
+  // set: the upload becomes a new version of this model (already checked to
+  // belong to organizationId)
+  assetId?: string;
+  draft?: boolean;
+  note?: string;
+  source: VersionSource;
+  sourceName?: string;
+  expiresAt: Date;
+}
+
+// What a used link says about the upload it allows
+const ticketFields = {
+  title: true,
+  assetId: true,
+  draft: true,
+  note: true,
+  source: true,
+  sourceName: true,
+} as const;
 
 @Injectable()
 export class UploadTicketsRepository {
   constructor(private _uploadTicket: PrismaRepository<'uploadTicket'>) {}
 
-  create(data: { organizationId: string; tokenHash: string; title?: string; expiresAt: Date }) {
+  create(data: NewUploadTicket) {
     return this._uploadTicket.model.uploadTicket.create({
-      data: { ...data, title: data.title || null },
+      data: {
+        organizationId: data.organizationId,
+        tokenHash: data.tokenHash,
+        title: data.title || null,
+        assetId: data.assetId || null,
+        draft: !!(data.assetId && data.draft),
+        note: data.note || null,
+        source: data.source,
+        sourceName: data.sourceName || null,
+        expiresAt: data.expiresAt,
+      },
       select: { id: true, expiresAt: true },
     });
   }
@@ -28,7 +63,7 @@ export class UploadTicketsRepository {
     }
     return this._uploadTicket.model.uploadTicket.findUnique({
       where: { tokenHash },
-      select: { title: true, organization: { select: { id: true, name: true } } },
+      select: { ...ticketFields, organization: { select: { id: true, name: true } } },
     });
   }
 
@@ -42,7 +77,7 @@ export class UploadTicketsRepository {
         expiresAt: { gt: new Date() },
         organization: { deletedAt: null },
       },
-      select: { title: true, expiresAt: true },
+      select: { title: true, expiresAt: true, assetId: true, draft: true, note: true, organizationId: true },
     });
   }
 

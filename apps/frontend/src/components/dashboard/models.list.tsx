@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { FC, FormEvent, useState } from 'react';
 import { OwnedAsset, useAssets } from '@pocket3d/frontend/hooks/use.assets';
 import { apiFetch } from '@pocket3d/frontend/lib/api';
-import { Button } from '@pocket3d/frontend/components/ui/button';
+import { BUTTON_BASE, BUTTON_VARIANTS, Button } from '@pocket3d/frontend/components/ui/button';
 import { Notice } from '@pocket3d/frontend/components/ui/notice';
 import { Card } from '@pocket3d/frontend/components/ui/card';
 
@@ -126,17 +126,21 @@ const ModelRow: FC<{ asset: OwnedAsset; onChange: () => void }> = ({
               </Button>
             </form>
           ) : (
-            <a
-              href={asset.url}
-              target="_blank"
-              rel="noopener"
+            <Link
+              href={`/dashboard/m/${asset.id}`}
               className="truncate text-[15px] font-semibold hover:underline"
             >
               {asset.title}
-            </a>
+            </Link>
           )}
           <div className="flex flex-wrap gap-x-[10px] text-[12px] text-textMuted">
-            <span>{formatDate(asset.createdAt)}</span>
+            <span>{formatDate(asset.activityAt || asset.createdAt)}</span>
+            {asset.version !== null && (asset.versions > 1 || asset.drafts > 0) && (
+              <span>
+                <span className="text-success">v{asset.version}</span> · {asset.versions} versions
+                {asset.drafts > 0 ? ` · ${asset.drafts} draft${asset.drafts === 1 ? '' : 's'}` : ''}
+              </span>
+            )}
             <span>{formatSize(asset.fileSize)}</span>
             <span className="truncate font-mono">{asset.url}</span>
           </div>
@@ -144,12 +148,26 @@ const ModelRow: FC<{ asset: OwnedAsset; onChange: () => void }> = ({
       </div>
       {!editing && (
         <div className="flex flex-wrap gap-[8px] ps-[70px]">
+          <a
+            href={asset.url}
+            target="_blank"
+            rel="noopener"
+            className={`${BUTTON_BASE} ${BUTTON_VARIANTS.secondary}`}
+          >
+            Open
+          </a>
           <Button
             variant="secondary"
             onClick={() => navigator.clipboard?.writeText(asset.url)}
           >
             Copy link
           </Button>
+          <Link
+            href={`/dashboard/m/${asset.id}`}
+            className={`${BUTTON_BASE} ${BUTTON_VARIANTS.secondary}`}
+          >
+            Versions
+          </Link>
           <Button variant="secondary" onClick={() => setEditing(true)}>
             Rename
           </Button>
@@ -171,7 +189,10 @@ const ModelRow: FC<{ asset: OwnedAsset; onChange: () => void }> = ({
       )}
       {confirmDelete && (
         <p className="ps-[70px] text-[13px] text-textMuted">
-          The link stops working and the files are removed.
+          The link stops working and the files are removed
+          {asset.versions + asset.drafts > 1
+            ? ` (all ${asset.versions + asset.drafts} versions).`
+            : '.'}
         </p>
       )}
       <div className="ps-[70px]">

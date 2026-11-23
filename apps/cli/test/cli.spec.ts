@@ -29,6 +29,7 @@ describe('pocket3d CLI', () => {
   let work: string;
   const published: { auth?: string; body: string }[] = [];
   const calls: { method: string; body: string }[] = [];
+  const versionCalls: { method: string; url: string; body: string }[] = [];
 
   beforeAll(async () => {
     expect(existsSync(CLI)).toBe(true);
@@ -62,12 +63,52 @@ describe('pocket3d CLI', () => {
       if (req.url === '/api/public/v1/assets/AAAAAAAAAAAA' && req.method === 'PUT') {
         if (!authorized) return json(401, { msg: 'Invalid API key' });
         calls.push({ method: 'PUT', body: body.toString('utf8') });
-        return json(200, { id: 'AAAAAAAAAAAA', title: JSON.parse(body.toString('utf8')).title, url: `${url}/m/AAAAAAAAAAAA` });
+        versionCalls.push({ method: 'PUT', url: req.url, body: body.toString('utf8') });
+        const sent = JSON.parse(body.toString('utf8'));
+        return json(200, { id: 'AAAAAAAAAAAA', title: sent.title ?? 'Robot', url: `${url}/m/AAAAAAAAAAAA`, version: sent.liveVersion ?? 3 });
       }
       if (req.url === '/api/public/v1/assets/AAAAAAAAAAAA' && req.method === 'DELETE') {
         if (!authorized) return json(401, { msg: 'Invalid API key' });
         calls.push({ method: 'DELETE', body: '' });
         return json(200, { deleted: true });
+      }
+      // versions of model AAAAAAAAAAAA
+      const model = `${url}/m/AAAAAAAAAAAA`;
+      if (req.url?.startsWith('/api/public/v1/assets/AAAAAAAAAAAA')) {
+        if (!authorized) return json(401, { msg: 'Invalid API key' });
+        const text = body.toString('latin1');
+        versionCalls.push({ method: req.method!, url: req.url, body: text });
+        if (req.url.endsWith('/versions') && req.method === 'POST') {
+          return text.includes('name="draft"')
+            ? json(201, { id: 'AAAAAAAAAAAA', url: model, title: 'Robot', version: 4, status: 'draft', live: 3, fileSize: 12, previewUrl: `${url}/dashboard/m/AAAAAAAAAAAA?v=4` })
+            : json(201, { id: 'AAAAAAAAAAAA', url: model, title: 'Robot', version: 4, status: 'published', live: 4, fileSize: 12, versionUrl: `${model}?v=4` });
+        }
+        if (req.url.endsWith('/publish') && req.method === 'POST') {
+          const live = JSON.parse(text).live;
+          return json(201, { id: 'AAAAAAAAAAAA', url: model, live: live ? 4 : 3, version: { number: 4, url: `${model}?v=4` } });
+        }
+        if (req.url.includes('/versions/') && req.method === 'DELETE') {
+          return req.url.endsWith('/3') ? json(409, { message: 'v3 is the live version: make another version live first.' }) : json(200, { deleted: true });
+        }
+        if (req.method === 'GET') {
+          return json(200, {
+            id: 'AAAAAAAAAAAA',
+            title: 'Robot',
+            url: model,
+            live: 3,
+            history: [
+              { number: 4, status: 'draft', live: false, note: 'red', source: 'mcp', sourceName: 'Claude', fileSize: 3 * 1024 * 1024, createdAt: '2026-11-22T10:00:00.000Z', url: null, previewUrl: `${url}/dashboard/m/AAAAAAAAAAAA?v=4` },
+              { number: 3, status: 'published', live: true, note: null, source: 'api', sourceName: 'laptop', fileSize: 2048, createdAt: '2026-11-21T10:00:00.000Z', url: `${model}?v=3`, previewUrl: '' },
+            ],
+          });
+        }
+        if (req.method === 'PUT' && JSON.parse(text).liveVersion) {
+          return json(200, { id: 'AAAAAAAAAAAA', url: model, version: JSON.parse(text).liveVersion });
+        }
+      }
+      // a server from before versions: Nest doesn't know the route
+      if (req.url === '/api/public/v1/assets/OLDSERVER000/versions') {
+        return json(404, { message: 'Cannot POST /public/v1/assets/OLDSERVER000/versions', error: 'Not Found', statusCode: 404 });
       }
       if (req.url?.startsWith('/api/public/v1/assets/') && (req.method === 'PUT' || req.method === 'DELETE')) {
         return json(404, { message: 'Model not found' });
@@ -211,6 +252,84 @@ describe('pocket3d CLI', () => {
     expect((await run(['delete', 'not-an-id'], env)).stderr).toContain('Not a model id or share link');
   });
 
+  it('publish --to adds a version to the same link, with a note', async () => {
+    const env = { ...loggedIn, POCKET3D_URL: url };
+    const result = await run(['publish', writeGlb(), '--to', `${url}/m/AAAAAAAAAAAA?v=2`, '--note', 'lower poly'], env);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe(`${url}/m/AAAAAAAAAAAA\n`);
+    expect(result.stderr).toContain(`v4 is live at the same link. Pinned to this version: ${url}/m/AAAAAAAAAAAA?v=4`);
+    const call = versionCalls.at(-1)!;
+    expect(call).toMatchObject({ method: 'POST', url: '/api/public/v1/assets/AAAAAAAAAAAA/versions' });
+    expect(call.body).toContain('lower poly');
+    expect(call.body).not.toContain('name="draft"');
+
+    const json = await run(['publish', writeGlb(), '--to', 'AAAAAAAAAAAA', '--json'], env);
+    expect(JSON.parse(json.stdout)).toEqual({
+      id: 'AAAAAAAAAAAA',
+      url: `${url}/m/AAAAAAAAAAAA`,
+      title: 'Robot',
+      fileSize: 12,
+      version: 4,
+      status: 'published',
+      live: 4,
+      versionUrl: `${url}/m/AAAAAAAAAAAA?v=4`,
+    });
+  });
+
+  it('publish --draft prints the private preview link; refused for a new model or with --title', async () => {
+    const env = { ...loggedIn, POCKET3D_URL: url };
+    const draft = await run(['publish', writeGlb(), '--to', 'AAAAAAAAAAAA', '--draft'], env);
+    expect(draft.code).toBe(0);
+    expect(draft.stdout).toBe(`${url}/dashboard/m/AAAAAAAAAAAA?v=4\n`);
+    expect(draft.stderr).toContain('people with the link still see v3');
+    expect(draft.stderr).toContain('pocket3d publish-draft AAAAAAAAAAAA 4');
+    expect(versionCalls.at(-1)!.body).toContain('name="draft"');
+
+    const before = versionCalls.length + published.length;
+    const newDraft = await run(['publish', writeGlb(), '--draft'], env);
+    expect(newDraft.code).toBe(1);
+    expect(newDraft.stderr).toContain("A new model can't be a draft");
+    const titled = await run(['publish', writeGlb(), '--to', 'AAAAAAAAAAAA', '--title', 'x'], env);
+    expect(titled.code).toBe(1);
+    expect(titled.stderr).toContain('pocket3d rename AAAAAAAAAAAA');
+    expect(versionCalls.length + published.length).toBe(before);
+  });
+
+  it('versions, live, publish-draft and delete --version', async () => {
+    const env = { ...loggedIn, POCKET3D_URL: url };
+    const listed = await run(['versions', `${url}/m/AAAAAAAAAAAA`], env);
+    expect(listed.code).toBe(0);
+    expect(listed.stdout.split('\n')[0]).toMatch(/^v4\s+draft\s+2026-11-22\s+3\.0 MB\s+via Claude\s+"red"$/);
+    expect(listed.stdout.split('\n')[1]).toMatch(/^v3\s+live\s+2026-11-21\s+2 KB\s+via laptop$/);
+    const json = JSON.parse((await run(['versions', 'AAAAAAAAAAAA', '--json'], env)).stdout);
+    expect(json).toMatchObject({ live: 3, versions: [{ version: 4, status: 'draft', previewUrl: expect.any(String) }, { version: 3, live: true, url: `${url}/m/AAAAAAAAAAAA?v=3` }] });
+
+    const live = await run(['live', 'AAAAAAAAAAAA', 'v3'], env);
+    expect(live.stderr).toContain('The link now shows v3.');
+    expect(JSON.parse(versionCalls.at(-1)!.body)).toEqual({ liveVersion: 3 });
+    expect((await run(['live', 'AAAAAAAAAAAA', 'latest'], env)).stderr).toContain('Not a version number');
+
+    const published1 = await run(['publish-draft', 'AAAAAAAAAAAA', '4'], env);
+    expect(published1.stdout.trim()).toBe(`${url}/m/AAAAAAAAAAAA?v=4`);
+    expect(published1.stderr).toContain('the link still shows v3');
+    const published2 = await run(['publish-draft', 'AAAAAAAAAAAA', '4', '--live'], env);
+    expect(published2.stderr).toContain('published and live');
+    expect(versionCalls.at(-1)).toMatchObject({ url: '/api/public/v1/assets/AAAAAAAAAAAA/versions/4/publish', body: '{"live":true}' });
+
+    const deleted = await run(['delete', 'AAAAAAAAAAAA', '--version', 'v2'], env);
+    expect(deleted.code).toBe(0);
+    expect(versionCalls.at(-1)).toMatchObject({ method: 'DELETE', url: '/api/public/v1/assets/AAAAAAAAAAAA/versions/2' });
+    const refused = await run(['delete', 'AAAAAAAAAAAA', '--version', '3'], env);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('v3 is the live version');
+  });
+
+  it('says so when the server is from before versions', async () => {
+    const result = await run(['publish', writeGlb(), '--to', 'OLDSERVER000'], { ...loggedIn, POCKET3D_URL: url });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("doesn't support model versions yet");
+  });
+
   it('skill installs SKILL.md for the logged-in instance, or prints it', async () => {
     await run(['login', url, GOOD_KEY]);
     const dir = join(work, 'skills', 'pocket3d');
@@ -228,9 +347,11 @@ describe('pocket3d CLI', () => {
     expect(existsSync(join(work, '.claude', 'skills', 'pocket3d', 'SKILL.md'))).toBe(true);
   });
 
-  it('lists whoami in the help', async () => {
+  it('lists whoami and the version commands in the help', async () => {
     const result = await run(['--help']);
     expect(result.stdout).toContain('pocket3d whoami');
+    expect(result.stdout).toContain('--to <id-or-link>');
+    expect(result.stdout).toContain('pocket3d publish-draft');
     expect(result.stdout).toContain('/dashboard/keys');
   });
 });

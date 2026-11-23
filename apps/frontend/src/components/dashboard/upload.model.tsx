@@ -26,7 +26,25 @@ import {
 type State =
   | { step: 'pick' }
   | { step: 'uploading'; progress: number }
-  | { step: 'done'; url: string; title: string };
+  | {
+      step: 'done';
+      url: string;
+      title: string;
+      version?: number;
+      draft?: boolean;
+      live?: number | null;
+    };
+
+// What the server answered for a new version
+interface UploadAnswer {
+  url?: string;
+  title?: string;
+  version?: number;
+  status?: 'draft' | 'published';
+  live?: number | null;
+}
+
+const NOTE_MAX_LENGTH = 280;
 
 const NOT_GLB =
   'pocket3d takes .glb files only. Export or convert the model to .glb (binary glTF), then upload that file.';
@@ -34,14 +52,22 @@ const NOT_GLB =
 // Publishing from the dashboard. The dashboard API only takes JSON, so the
 // file doesn't go through it: POST /assets/upload-link returns a single-use
 // upload link for this account, and the file goes straight to that link,
-// the same upload path (and checks) as the CLI's upload links
-export const UploadModel: FC = () => {
+// the same upload path (and checks) as the CLI's upload links. With `model`,
+// the link (and so the upload) adds the next version of that model: same
+// link, live at once, or a private draft
+export const UploadModel: FC<{
+  model?: { id: string; title: string };
+  onDone?: (version: number) => void;
+}> = ({ model, onDone }) => {
   const inputId = useId();
   const coverId = useId();
+  const draftId = useId();
   const { mutate } = useSWRConfig();
   const [file, setFile] = useState<File | null>(null);
   const [cover, setCover] = useState<File | null>(null);
   const [title, setTitle] = useState('');
+  const [note, setNote] = useState('');
+  const [draft, setDraft] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [state, setState] = useState<State>({ step: 'pick' });
@@ -50,6 +76,8 @@ export const UploadModel: FC = () => {
     setFile(null);
     setCover(null);
     setTitle('');
+    setNote('');
+    setDraft(false);
     setProblem(null);
     setState({ step: 'pick' });
   };
@@ -91,7 +119,11 @@ export const UploadModel: FC = () => {
       // asked for right before sending, so it can't expire on an open tab
       const link = await apiFetch<{ url: string }>('/assets/upload-link', {
         method: 'POST',
-        body: title.trim() ? { title: title.trim() } : {},
+        body: model
+          ? { model: model.id, draft, ...(note.trim() ? { note: note.trim() } : {}) }
+          : title.trim()
+          ? { title: title.trim() }
+          : {},
       });
       path = new URL(link.url, window.location.origin).pathname;
     } catch (err) {
@@ -101,23 +133,53 @@ export const UploadModel: FC = () => {
     }
     const result = await sendUpload(
       path,
-      { file, title: title.trim(), cover },
+      { file, title: model ? undefined : title.trim(), cover },
       (progress) => setState({ step: 'uploading', progress })
     );
-    if (result.status === 201 && result.body?.url) {
+    const answer = result.body as UploadAnswer | null;
+    if (result.status === 201 && answer?.url) {
       setState({
         step: 'done',
-        url: result.body.url,
-        title: result.body.title || title || file.name,
+        url: answer.url,
+        title: answer.title || title || file.name,
+        version: answer.version,
+        draft: answer.status === 'draft',
+        live: answer.live,
       });
-      // the list and the storage meter, on every page of it
+      // the list, the storage meter and the model page
       mutate((key) => typeof key === 'string' && key.startsWith('/assets'));
+      if (model && answer.version) {
+        onDone?.(answer.version);
+      }
       return;
     }
     // the link is spent, but a new one is made on the next try: keep the form
     setProblem(uploadError(result));
     setState({ step: 'pick' });
   };
+
+  if (state.step === 'done' && model) {
+    return (
+      <Card title={state.draft ? `Draft v${state.version} saved` : `v${state.version} is live`}>
+        <Notice tone="info">
+          {state.draft
+            ? `Only you can see it. People with the link still see v${state.live}: publish the draft from its menu when it's ready.`
+            : 'People with the link see it now. Same link as before:'}
+        </Notice>
+        {!state.draft && (
+          <div className="break-all rounded-control border border-line bg-bgInner px-[12px] py-[10px] font-mono text-[14px]">
+            {state.url}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-[8px]">
+          {!state.draft && <CopyButton value={state.url} label="Copy link" />}
+          <Button variant="ghost" onClick={reset}>
+            Upload another version
+          </Button>
+        </div>
+      </Card>
+    );
+  }
 
   if (state.step === 'done') {
     return (
@@ -149,7 +211,14 @@ export const UploadModel: FC = () => {
   const uploading = state.step === 'uploading';
   const progress = uploading ? state.progress : 0;
   return (
-    <Card title="Publish a model">
+    <Card
+      title={model ? 'Upload a new version' : 'Publish a model'}
+      description={
+        model
+          ? `Same link: it replaces what people see of “${model.title}”, and the current version stays in the history.`
+          : undefined
+      }
+    >
       <form onSubmit={onSubmit} className="flex flex-col gap-[16px]">
         <label
           htmlFor={inputId}
@@ -198,14 +267,43 @@ export const UploadModel: FC = () => {
 
         {file && (
           <>
-            <Field
-              label="Title (optional)"
-              hint="Shown on the viewer page and in link previews. Defaults to the file name."
-              value={title}
-              maxLength={TITLE_MAX_LENGTH}
-              disabled={uploading}
-              onChange={(event) => setTitle(event.target.value)}
-            />
+            {model ? (
+              <>
+                <Field
+                  label="What changed (optional)"
+                  hint="Shown with this version in the history."
+                  value={note}
+                  maxLength={NOTE_MAX_LENGTH}
+                  disabled={uploading}
+                  onChange={(event) => setNote(event.target.value)}
+                />
+                <label htmlFor={draftId} className="flex cursor-pointer items-start gap-[10px] text-[14px]">
+                  <input
+                    id={draftId}
+                    type="checkbox"
+                    checked={draft}
+                    disabled={uploading}
+                    onChange={(event) => setDraft(event.target.checked)}
+                    className="mt-[3px] accent-accent"
+                  />
+                  <span>
+                    Save as a draft
+                    <span className="block text-[12px] text-textMuted">
+                      Only you can see it until you publish it; people with the link keep seeing the live version.
+                    </span>
+                  </span>
+                </label>
+              </>
+            ) : (
+              <Field
+                label="Title (optional)"
+                hint="Shown on the viewer page and in link previews. Defaults to the file name."
+                value={title}
+                maxLength={TITLE_MAX_LENGTH}
+                disabled={uploading}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            )}
             <div className="flex flex-col gap-[6px]">
               <span className="text-[13px] font-medium text-textMuted">
                 Cover image (optional)
@@ -273,7 +371,7 @@ export const UploadModel: FC = () => {
           </div>
         ) : (
           <Button type="submit" disabled={!file} className="self-start">
-            Publish
+            {model ? (draft ? 'Save draft' : 'Publish version') : 'Publish'}
           </Button>
         )}
       </form>

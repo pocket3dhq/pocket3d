@@ -20,10 +20,17 @@ const CONFIG_FILE = join(
 const HELP = `pocket3d: publish a 3D model, get a link anyone can open
 
 Usage
-  pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--json]
-  pocket3d list [--page N] [--json]          your models, newest first
+  pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--note "..."] [--json]
+  pocket3d publish <model.glb> --to <id-or-link> [--note "what changed"] [--cover cover.png] [--draft] [--json]
+                                             a new version of that model: same link, live at once
+                                             (--draft: private until you publish it)
+  pocket3d versions <id-or-link> [--json]    the model's versions, newest first
+  pocket3d live <id-or-link> <version>       which version the link shows (to roll back)
+  pocket3d publish-draft <id-or-link> <version> [--live]
+  pocket3d list [--page N] [--json]          your models, recently changed first
   pocket3d rename <id-or-link> "New title"
-  pocket3d delete <id-or-link>               the link stops working
+  pocket3d delete <id-or-link>               the model and all its versions; the link stops working
+  pocket3d delete <id-or-link> --version <N> one version (not the live one)
   pocket3d login <api-key>                   for ${CLOUD_URL}; create a key at /dashboard/keys
   pocket3d login <url> <api-key>             for a self-hosted instance
   pocket3d whoami                            which account the saved key publishes to
@@ -32,7 +39,7 @@ Usage
 
 publish prints only the share link on stdout (or one JSON object with --json),
 so scripts and AI agents can capture it. Errors go to stderr with a non-zero
-exit code.
+exit code. A version is 3 or v3.
 
 Limits: .glb up to 95 MB; cover PNG/JPEG/WebP up to 5 MB (used for link previews).
 Config: POCKET3D_URL and POCKET3D_API_KEY, or ${CONFIG_FILE} (written by login).`;
@@ -187,6 +194,10 @@ async function readAnswer(config: Config, response: Response) {
       `The server rejected the API key (${body?.msg || 'unauthorized'}). Create one at ${keysPage(config.url)}, then run: pocket3d login ${config.url === CLOUD_URL ? '' : config.url + ' '}<api-key>`
     );
   }
+  if (response.status === 404 && typeof body?.message === 'string' && body.message.startsWith('Cannot ')) {
+    // Nest's answer for a route it doesn't have: a server from before versions
+    throw new CliError(`${config.url} doesn't support model versions yet: update that pocket3d server, or publish without --to.`);
+  }
   if (!response.ok || body === null) {
     const message = body?.message || body?.msg || text.slice(0, 200) || response.statusText;
     throw new CliError(`Request failed (${response.status}): ${Array.isArray(message) ? message.join(', ') : message}`);
@@ -202,6 +213,15 @@ const modelId = (ref: string) => {
     throw new CliError(`Not a model id or share link: ${ref}`);
   }
   return id;
+};
+
+// A version number from 3 or v3
+const versionArg = (ref: string | undefined) => {
+  const match = (ref || '').trim().match(/^v?([1-9]\d{0,5})$/i);
+  if (!match) {
+    throw new CliError(`Not a version number: ${ref ?? '(none)'} (use 3 or v3)`);
+  }
+  return Number(match[1]);
 };
 
 async function login(args: string[]) {
@@ -233,11 +253,25 @@ async function publish(args: string[]) {
     options: {
       title: { type: 'string', short: 't' },
       cover: { type: 'string', short: 'c' },
+      to: { type: 'string' },
+      note: { type: 'string', short: 'n' },
+      draft: { type: 'boolean' },
       json: { type: 'boolean' },
     },
   });
   if (positionals.length !== 1) {
-    throw new CliError('Usage: pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--json]');
+    throw new CliError(
+      'Usage: pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--json]\n' +
+        '   or: pocket3d publish <model.glb> --to <id-or-link> [--note "what changed"] [--draft] [--json]'
+    );
+  }
+  // A new version keeps its model's title and link; a new model is never a draft
+  const target = values.to !== undefined ? modelId(values.to) : undefined;
+  if (target && values.title !== undefined) {
+    throw new CliError(`--title is for new models; a new version keeps the model's title. To rename it: pocket3d rename ${target} "New title"`);
+  }
+  if (values.draft && !target) {
+    throw new CliError("A new model can't be a draft: publish it first, then add drafts with --to <id-or-link> --draft");
   }
 
   const modelPath = resolve(positionals[0]);
@@ -250,14 +284,17 @@ async function publish(args: string[]) {
   // Text fields first: the server reads the multipart body in order
   const form = new FormData();
   if (values.title) form.append('title', values.title);
+  if (values.note) form.append('note', values.note);
+  if (values.draft) form.append('draft', 'true');
   form.append('file', await openAsBlob(modelPath, { type: 'model/gltf-binary' }), basename(modelPath));
   if (coverPath && coverMime) {
     form.append('cover', await openAsBlob(coverPath, { type: coverMime }), basename(coverPath));
   }
 
+  const endpoint = target ? `/assets/${target}/versions` : '/assets';
   let response: Response;
   try {
-    response = await fetch(`${config.url}/api/public/v1/assets`, {
+    response = await fetch(`${config.url}/api/public/v1${endpoint}`, {
       method: 'POST',
       headers: { Authorization: config.apiKey },
       body: form,
@@ -276,12 +313,103 @@ async function publish(args: string[]) {
     throw new CliError(`Publish failed: the server answered without a link`);
   }
 
+  const draft = body.status === 'draft';
   if (values.json) {
     process.stdout.write(
-      JSON.stringify({ id: body.id, url: body.url, title: body.title, fileSize: body.fileSize }) + '\n'
+      JSON.stringify({
+        id: body.id,
+        url: body.url,
+        title: body.title,
+        fileSize: body.fileSize,
+        ...(body.version !== undefined ? { version: body.version, status: body.status } : {}),
+        ...(target ? { live: body.live } : {}),
+        ...(body.versionUrl ? { versionUrl: body.versionUrl } : {}),
+        ...(body.previewUrl ? { previewUrl: body.previewUrl } : {}),
+      }) + '\n'
     );
-  } else {
+    return;
+  }
+  if (draft) {
+    // the share link still shows the live version: the preview is the link to give
+    process.stdout.write(`${body.previewUrl}\n`);
+    process.stderr.write(
+      `Draft v${body.version} saved: people with the link still see v${body.live}. Publish it: pocket3d publish-draft ${body.id} ${body.version} [--live]\n`
+    );
+    return;
+  }
+  process.stdout.write(`${body.url}\n`);
+  if (target) {
+    process.stderr.write(`v${body.version} is live at the same link. Pinned to this version: ${body.versionUrl}\n`);
+  }
+}
+
+// The model's versions, newest first
+async function versions(args: string[]) {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } });
+  if (positionals.length !== 1) {
+    throw new CliError('Usage: pocket3d versions <id-or-link> [--json]');
+  }
+  const id = modelId(positionals[0]);
+  const config = await readConfig();
+  const body = await api(config, 'GET', `/assets/${id}`);
+  const history = (body.history || []).map((v: any) => ({
+    version: v.number,
+    status: v.status,
+    live: !!v.live,
+    note: v.note ?? null,
+    from: v.sourceName || v.source || null,
+    fileSize: v.fileSize,
+    createdAt: v.createdAt,
+    ...(v.url ? { url: v.url } : { previewUrl: v.previewUrl }),
+  }));
+  if (values.json) {
+    process.stdout.write(JSON.stringify({ id: body.id, title: body.title, url: body.url, live: body.live, versions: history }) + '\n');
+    return;
+  }
+  process.stderr.write(`${body.title}  ${body.url}\n`);
+  for (const v of history) {
+    const state = v.live ? 'live' : v.status === 'draft' ? 'draft' : '';
+    const line = [
+      `v${v.version}`.padEnd(6),
+      state.padEnd(6),
+      String(v.createdAt).slice(0, 10),
+      formatSize(v.fileSize).padStart(8),
+      v.from ? `via ${v.from}` : '',
+      v.note ? `"${v.note}"` : '',
+    ];
+    process.stdout.write(line.join('  ').trimEnd() + '\n');
+  }
+}
+
+// Which published version the link shows (to roll back, an older one)
+async function live(args: string[]) {
+  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
+  if (positionals.length !== 2) {
+    throw new CliError('Usage: pocket3d live <id-or-link> <version>');
+  }
+  const id = modelId(positionals[0]);
+  const version = versionArg(positionals[1]);
+  const config = await readConfig();
+  const body = await api(config, 'PUT', `/assets/${id}`, { liveVersion: version });
+  process.stdout.write(`${body.url}\n`);
+  process.stderr.write(`The link now shows v${body.version ?? version}.\n`);
+}
+
+async function publishDraft(args: string[]) {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { live: { type: 'boolean' } } });
+  if (positionals.length !== 2) {
+    throw new CliError('Usage: pocket3d publish-draft <id-or-link> <version> [--live]');
+  }
+  const id = modelId(positionals[0]);
+  const version = versionArg(positionals[1]);
+  const config = await readConfig();
+  const body = await api(config, 'POST', `/assets/${id}/versions/${version}/publish`, { live: !!values.live });
+  if (values.live) {
     process.stdout.write(`${body.url}\n`);
+    process.stderr.write(`v${version} is published and live.\n`);
+  } else {
+    process.stdout.write(`${body.version?.url || body.url}\n`);
+    process.stderr.write(`v${version} is published; the link still shows v${body.live}. Make it live: pocket3d live ${id} ${version}\n`);
   }
 }
 
@@ -303,6 +431,9 @@ async function list(args: string[]) {
     id: a.id,
     title: a.title,
     url: a.url,
+    version: a.version ?? null,
+    versions: a.versions ?? null,
+    drafts: a.drafts ?? 0,
     fileSize: a.fileSize,
     createdAt: a.createdAt,
   }));
@@ -317,7 +448,11 @@ async function list(args: string[]) {
     return;
   }
   for (const m of models) {
-    process.stdout.write(`${m.url}  ${m.title}  (${formatSize(m.fileSize)}, ${String(m.createdAt).slice(0, 10)})\n`);
+    const history =
+      m.versions > 1 || m.drafts
+        ? `v${m.version} of ${m.versions}${m.drafts ? ` + ${m.drafts} draft${m.drafts > 1 ? 's' : ''}` : ''}, `
+        : '';
+    process.stdout.write(`${m.url}  ${m.title}  (${history}${formatSize(m.fileSize)}, ${String(m.createdAt).slice(0, 10)})\n`);
   }
   if (body.pages > 1) {
     process.stderr.write(`Page ${body.page} of ${body.pages} (${body.total} models). Next: pocket3d list --page ${body.page + 1}\n`);
@@ -336,14 +471,24 @@ async function rename(args: string[]) {
 }
 
 async function remove(args: string[]) {
-  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
+  const { positionals, values } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { version: { type: 'string' } },
+  });
   if (positionals.length !== 1) {
-    throw new CliError('Usage: pocket3d delete <id-or-link>');
+    throw new CliError('Usage: pocket3d delete <id-or-link> [--version <N>]');
   }
   const id = modelId(positionals[0]);
+  const version = values.version !== undefined ? versionArg(values.version) : undefined;
   const config = await readConfig();
+  if (version) {
+    await api(config, 'DELETE', `/assets/${id}/versions/${version}`);
+    process.stderr.write(`Deleted v${version} of ${id}; links pinned to it now show the live version.\n`);
+    return;
+  }
   await api(config, 'DELETE', `/assets/${id}`);
-  process.stderr.write(`Deleted ${id}; its link no longer works.\n`);
+  process.stderr.write(`Deleted ${id} and all its versions; its link no longer works.\n`);
 }
 
 // Writes SKILL.md for Claude Code (~/.claude/skills/pocket3d) or prints it.
@@ -378,6 +523,12 @@ async function main(argv: string[]) {
       return list(rest);
     case 'rename':
       return rename(rest);
+    case 'versions':
+      return versions(rest);
+    case 'live':
+      return live(rest);
+    case 'publish-draft':
+      return publishDraft(rest);
     case 'delete':
     case 'rm':
       return remove(rest);

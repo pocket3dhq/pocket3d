@@ -11,10 +11,14 @@ import { GetOrgFromRequest } from '@pocket3d/nestjs-libraries/user/org.from.requ
 import { AuthOrg } from '@pocket3d/nestjs-libraries/user/request.types';
 import { StorageLimitGuard } from '@pocket3d/backend/services/auth/storage.limit.guard';
 import { UPLOAD_LINK_GONE, UploadTicketGuard } from '@pocket3d/backend/services/auth/upload.ticket.guard';
-import { UploadTicketsService } from '@pocket3d/nestjs-libraries/database/prisma/upload-tickets/upload.tickets.service';
+import {
+  ClaimedTicket,
+  UploadTicketsService,
+} from '@pocket3d/nestjs-libraries/database/prisma/upload-tickets/upload.tickets.service';
 
-// Upload links from the MCP tool create_upload_link: the same upload as
-// POST /public/v1/assets, authorised by a single-use token in the path
+// Upload links from the MCP tool create_upload_link and the dashboard: the
+// same upload as POST /public/v1/assets (or …/assets/:id/versions when the
+// link was made for a model), authorised by a single-use token in the path
 // instead of an API key (not behind PublicAuthMiddleware). The browser page
 // MAIN_URL/u/<token> uses both routes: GET to show the link, POST to upload
 @ApiTags('Public API')
@@ -35,7 +39,7 @@ export class PublicUploadLinkController {
     if (!ticket) {
       throw new HttpException(UPLOAD_LINK_GONE, HttpStatus.GONE);
     }
-    return { title: ticket.title, expiresAt: ticket.expiresAt };
+    return ticket;
   }
 
   // Per IP (the link has no account yet), counted before the link is used up
@@ -52,7 +56,8 @@ export class PublicUploadLinkController {
       properties: {
         file: { type: 'string', format: 'binary', description: '.glb, up to 95 MB' },
         cover: { type: 'string', format: 'binary', description: 'PNG/JPEG/WebP link-preview image, up to 5 MB' },
-        title: { type: 'string', maxLength: 120 },
+        title: { type: 'string', maxLength: 120, description: 'New models only' },
+        note: { type: 'string', maxLength: 280, description: 'What this version is or changed' },
       },
     },
   })
@@ -68,12 +73,22 @@ export class PublicUploadLinkController {
   createAsset(
     @Param('token') _token: string,
     @GetOrgFromRequest() org: AuthOrg,
-    @Req() req: Request & { uploadTicketTitle?: string | null },
+    @Req() req: Request & { uploadTicket: ClaimedTicket },
     @UploadedFiles()
     files: { file?: Express.Multer.File[]; cover?: Express.Multer.File[] },
     @Body() body: CreateAssetDto
   ) {
-    const title = body.title || req.uploadTicketTitle || undefined;
-    return this._assetsService.createAsset(org.id, { title }, files?.file?.[0], files?.cover?.[0]);
+    const ticket = req.uploadTicket;
+    const file = files?.file?.[0];
+    const cover = files?.cover?.[0];
+    const note = body.note || ticket.note || undefined;
+    const origin = { source: ticket.source, sourceName: ticket.sourceName };
+    if (ticket.assetId) {
+      // the link was made for this model of this org; the transaction checks
+      // both again. Draft or not is the link's call, never the body's
+      return this._assetsService.addVersion(org.id, ticket.assetId, { file, cover }, { note, draft: ticket.draft, origin });
+    }
+    const title = body.title || ticket.title || undefined;
+    return this._assetsService.createAsset(org.id, { title, note }, file, cover, origin);
   }
 }

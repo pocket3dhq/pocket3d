@@ -2,7 +2,8 @@
 # End-to-end check of a running pocket3d: accounts, API keys, upload
 # validation, publish, the share page (with its link-preview tags), file
 # serving, and what agents use (llms.txt, skill.md, OAuth discovery, the MCP
-# server, upload links, publish from URL, list/rename/delete).
+# server, upload links, publish from URL, list/rename/delete, versions and
+# drafts).
 #
 #   scripts/smoke.sh <base-url> [api-key]
 #   scripts/smoke.sh http://localhost:4200                # pnpm dev
@@ -139,6 +140,28 @@ expect "model served as model/gltf-binary" "model/gltf-binary" "$ctype"
 read -r code ctype < <(curl -s -o /dev/null -w '%{http_code} %{content_type}\n' "$cover")
 expect "cover served as image/png" "200 image/png" "$code $ctype"
 
+echo "versions"
+expect "publish v2 to the same model → 201" 201 "$(status -H "Authorization: $key" -F 'note=smoke v2' -F "file=@$tmp/triangle.glb" "$api/public/v1/assets/$id/versions")"
+expect "  same link, v2 live" "$url 2 2" "$(field url) $(field version) $(field live)"
+v2_path="$(field path)"
+expect "the link shows v2" "2 $v2_path" "$(status "$api/public/assets/$id" >/dev/null; echo "$(field shown) $(field path)")"
+expect "?v=1 pins v1" "1 $path" "$(status "$api/public/assets/$id?v=1" >/dev/null; echo "$(field shown) $(field path)")"
+expect "GET /m/<id>?v=1 → 200" 200 "$(status -A 'Mozilla/5.0' "$url?v=1")"
+if sed -e 's#</head>.*##' "$tmp/body" | grep -q 'property="og:title" content="[^"]* · v1"'; then pass "  og:title names the version"; else fail "  og:title names the version"; fi
+expect "upload v3 as a draft → 201" "201 draft" "$(status -H "Authorization: $key" -F 'draft=true' -F "file=@$tmp/triangle.glb" "$api/public/v1/assets/$id/versions") $(field status)"
+v3_path="$(field path)"
+expect "  the link still shows v2" 2 "$(status "$api/public/assets/$id" >/dev/null; field shown)"
+if [ -n "$v3_path" ] && ! grep -qF "$v3_path" "$tmp/body"; then pass "  the draft is not in the public data"; else fail "  the draft is not in the public data"; fi
+expect "  ?v=3 shows the live version" "2 true" "$(status "$api/public/assets/$id?v=3" >/dev/null; echo "$(field shown) $(field missing)")"
+expect "make the draft live → 409" 409 "$(status -X PUT -H "Authorization: $key" "${json[@]}" -d '{"liveVersion":3}' "$api/public/v1/assets/$id")"
+expect "publish the draft → 201" 201 "$(status -X POST -H "Authorization: $key" "${json[@]}" -d '{}' "$api/public/v1/assets/$id/versions/3/publish")"
+expect "roll back to v1 → 200" "200 1" "$(status -X PUT -H "Authorization: $key" "${json[@]}" -d '{"liveVersion":"v1"}' "$api/public/v1/assets/$id") $(field version)"
+expect "delete the live version → 409" 409 "$(status -X DELETE -H "Authorization: $key" "$api/public/v1/assets/$id/versions/1")"
+expect "delete v3 → 200" 200 "$(status -X DELETE -H "Authorization: $key" "$api/public/v1/assets/$id/versions/3")"
+expect "  its file is gone → 404" 404 "$(status "$v3_path")"
+expect "delete v2 → 200" 200 "$(status -X DELETE -H "Authorization: $key" "$api/public/v1/assets/$id/versions/v2")"
+expect "delete the last version → 409" 409 "$(status -X DELETE -H "Authorization: $key" "$api/public/v1/assets/$id/versions/1")"
+
 echo "agents"
 expect "GET /llms.txt → 200" 200 "$(status "$base/llms.txt")"
 if grep -qF "$base/mcp" "$tmp/body"; then pass "llms.txt points at this instance's MCP server"; else fail "llms.txt points at this instance's MCP server"; fi
@@ -160,7 +183,9 @@ tool_result() { node -e 'const r = JSON.parse(require("fs").readFileSync(process
 expect "MCP tools/list with the key → 200" 200 "$(mcp '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')"
 has_header x-ratelimit-limit-account && pass "  rate-limited per account" || fail "  rate-limited per account"
 tools="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).result.tools.map(t => t.name).sort().join(","))' "$tmp/body" 2>/dev/null)"
-expect "  the six tools" "create_upload_link,delete_model,list_models,publish_from_url,rename_model,whoami" "$tools"
+expect "  the ten tools" "create_upload_link,delete_model,delete_version,list_models,list_versions,publish_draft,publish_from_url,rename_model,set_live_version,whoami" "$tools"
+expect "MCP list_versions → 200" 200 "$(mcp '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_versions","arguments":{"model":"'"$id"'"}}}')"
+expect "  v1 is live" "1" "$(tool_result | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).live)}catch{console.log(s.slice(0,200))}})')"
 
 expect "GET /public/v1/assets → 200" 200 "$(status -H "Authorization: $key" "$api/public/v1/assets")"
 listed="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).assets.some(a => a.id === process.argv[2]))' "$tmp/body" "$id" 2>/dev/null)"

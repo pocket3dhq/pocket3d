@@ -7,15 +7,11 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { isTyping } from './versions';
 
 // Draco-compressed glbs (common from AI generators) need the decoder; Google
 // hosts the versioned builds three's DRACOLoader expects
 const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/';
-
-type Status =
-  | { state: 'loading'; progress: number | null }
-  | { state: 'ready' }
-  | { state: 'error'; message: string };
 
 // Frees everything the GPU holds for the loaded model
 const disposeObject = (root: THREE.Object3D) => {
@@ -148,14 +144,40 @@ const frameModel = (
   controls.update();
 };
 
+// Everything that lives as long as the viewer, whatever model it shows
+interface Stage {
+  renderer: THREE.WebGLRenderer;
+  camera: THREE.PerspectiveCamera;
+  controls: OrbitControls;
+  scene: THREE.Scene;
+  loader: GLTFLoader;
+  model: THREE.Object3D | null;
+  // bounding radius of the model shown, to tell whether the next one is of
+  // a comparable size
+  radius: number | null;
+}
+
+const boundingRadius = (root: THREE.Object3D) =>
+  new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere()).radius || 1;
+
+// A new version within this factor of the old one's size keeps the camera
+// where it is, so flipping between versions shows what changed; beyond it
+// the camera reframes (the new one would be lost or fill the screen)
+const KEEP_CAMERA_RATIO = 3;
+
 export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<Status>({ state: 'loading', progress: null });
+  const stageRef = useRef<Stage | null>(null);
+  // the file on screen, the one loading, the one that failed: set from the
+  // loader's callbacks only
+  const [shownSrc, setShownSrc] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ src: string; ratio: number | null } | null>(null);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
+  // The renderer, camera and controls: created once, kept across models
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    let cancelled = false;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -165,7 +187,6 @@ export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) 
     renderer.toneMapping = THREE.NoToneMapping;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.className = 'block h-full w-full touch-none outline-none';
-    renderer.domElement.setAttribute('aria-label', `3D model: ${title}`);
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -213,46 +234,27 @@ export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) 
 
     const draco = new DRACOLoader().setDecoderPath(DRACO_DECODER_PATH);
     const loader = new GLTFLoader().setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder);
-    let model: THREE.Object3D | null = null;
+    const stage: Stage = { renderer, camera, controls, scene, loader, model: null, radius: null };
+    stageRef.current = stage;
 
-    loader.load(
-      src,
-      (gltf) => {
-        if (cancelled) {
-          disposeObject(gltf.scene);
-          return;
-        }
-        model = gltf.scene;
-        scene.add(model);
-        frameModel(model, camera, controls);
-        setStatus({ state: 'ready' });
-      },
-      (event) => {
-        if (cancelled) return;
-        setStatus({
-          state: 'loading',
-          progress: event.total ? event.loaded / event.total : null,
-        });
-      },
-      (error) => {
-        if (cancelled) return;
-        console.error('Could not load the model', error);
-        setStatus({
-          state: 'error',
-          message: 'This model could not be loaded. Check your connection and reload the page.',
-        });
+    // R puts the camera back where it started for this model
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.key === 'r' || event.key === 'R') && !event.metaKey && !event.ctrlKey && !event.altKey && !isTyping(event.target) && stage.model) {
+        frameModel(stage.model, camera, controls);
       }
-    );
+    };
+    window.addEventListener('keydown', onKey);
 
     return () => {
-      cancelled = true;
+      stageRef.current = null;
+      window.removeEventListener('keydown', onKey);
       observer.disconnect();
       renderer.setAnimationLoop(null);
       controls.removeEventListener('start', stopAutoRotate);
       controls.dispose();
-      if (model) {
-        scene.remove(model);
-        disposeObject(model);
+      if (stage.model) {
+        scene.remove(stage.model);
+        disposeObject(stage.model);
       }
       environment.dispose();
       pmrem.dispose();
@@ -260,29 +262,114 @@ export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) 
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [src, title]);
+  }, []);
+
+  useEffect(() => {
+    stageRef.current?.renderer.domElement.setAttribute('aria-label', `3D model: ${title}`);
+  }, [title]);
+
+  // The model: loaded whenever the file changes. The one on screen stays
+  // until the new one is ready; a load that finishes after a newer request
+  // (quick clicks through versions) is thrown away, never shown
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    let cancelled = false;
+
+    stage.loader.load(
+      src,
+      (gltf) => {
+        if (cancelled) {
+          disposeObject(gltf.scene);
+          return;
+        }
+        const next = gltf.scene;
+        const radius = boundingRadius(next);
+        const previous = stage.model;
+        if (previous) {
+          stage.scene.remove(previous);
+          disposeObject(previous);
+        }
+        stage.scene.add(next);
+        const reframe =
+          stage.radius === null ||
+          radius / stage.radius > KEEP_CAMERA_RATIO ||
+          stage.radius / radius > KEEP_CAMERA_RATIO;
+        stage.model = next;
+        stage.radius = radius;
+        if (reframe) {
+          frameModel(next, stage.camera, stage.controls);
+        }
+        setFailedSrc(null);
+        setShownSrc(src);
+      },
+      (event) => {
+        if (cancelled) return;
+        setProgress({ src, ratio: event.total ? event.loaded / event.total : null });
+      },
+      (error) => {
+        if (cancelled) return;
+        console.error('Could not load the model', error);
+        setFailedSrc(src);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  const failed = failedSrc === src;
+  const loading = shownSrc !== src && !failed;
+  // a model is on screen already: the next one loads behind it
+  const replacing = loading && shownSrc !== null;
+  const ratio = progress?.src === src ? progress.ratio : null;
 
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="absolute inset-0" />
-      {status.state === 'loading' && (
+      {loading && !replacing && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-[12px]">
           <div className="h-[4px] w-[180px] overflow-hidden rounded-full bg-line">
             <div
               className="h-full rounded-full bg-accent transition-[width] duration-200"
-              style={{ width: `${Math.round((status.progress ?? 0.1) * 100)}%` }}
+              style={{ width: `${Math.round((ratio ?? 0.1) * 100)}%` }}
             />
           </div>
           <div className="text-[13px] text-textMuted">
-            {status.progress === null
-              ? 'Loading model…'
-              : `Loading model… ${Math.round(status.progress * 100)}%`}
+            {ratio === null ? 'Loading model…' : `Loading model… ${Math.round(ratio * 100)}%`}
           </div>
         </div>
       )}
-      {status.state === 'error' && (
-        <div className="absolute inset-0 flex items-center justify-center px-[24px]">
-          <div className="max-w-[360px] text-center text-[14px] text-danger">{status.message}</div>
+      {replacing && (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-[3px] overflow-hidden bg-line/60"
+          role="progressbar"
+          aria-label="Loading this version"
+          aria-valuenow={ratio === null ? undefined : Math.round(ratio * 100)}
+        >
+          <div
+            className="h-full bg-accent transition-[width] duration-200"
+            style={{ width: `${Math.round((ratio ?? 0.15) * 100)}%` }}
+          />
+        </div>
+      )}
+      {failed && (
+        <div
+          className={
+            shownSrc
+              ? 'pointer-events-none absolute inset-x-0 top-[56px] flex justify-center px-[16px]'
+              : 'absolute inset-0 flex items-center justify-center px-[24px]'
+          }
+        >
+          <div
+            role="alert"
+            className="max-w-[360px] rounded-control bg-bg/80 px-[12px] py-[8px] text-center text-[14px] text-danger"
+          >
+            {shownSrc
+              ? 'This version could not be loaded. Check your connection and try again.'
+              : 'This model could not be loaded. Check your connection and reload the page.'}
+          </div>
         </div>
       )}
     </div>

@@ -400,6 +400,8 @@ describe('accounts (e2e)', () => {
           /^http:\/\/localhost:4200\/api\/public\/v1\/uploads\/p3d_up_/
         ),
         expiresAt: expect.any(String),
+        model: null,
+        draft: false,
       });
       expect(
         (
@@ -570,8 +572,9 @@ describe('accounts (e2e)', () => {
       const key = await createKey(t, cookie);
       const model = (await publish(t, key.key, 'One', true)).body;
       const list = await t.http().get('/assets').set('Cookie', cookie);
-      const stored = await t.prisma.asset.findUnique({
-        where: { id: model.id },
+      // the files are the model's v1
+      const stored = await t.prisma.assetVersion.findUnique({
+        where: { assetId_number: { assetId: model.id, number: 1 } },
       });
       expect(stored!.coverSize).toBeGreaterThan(0);
       expect(list.body.storage).toEqual({

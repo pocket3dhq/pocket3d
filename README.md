@@ -43,7 +43,7 @@ npx -y pocket3d login <api-key> && npx -y pocket3d skill   # once; the skill tea
 claude mcp add --transport http pocket3d https://pocket3d.co/mcp   # Claude Code
 ```
 
-In Claude.ai / Claude Desktop: Settings → Connectors → Add custom connector → `https://pocket3d.co/mcp`. Tools: `whoami`, `list_models`, `rename_model`, `delete_model`, `publish_from_url` (a `.glb` already on the web, e.g. a 3D generator's output) and `create_upload_link`. An MCP tool can't carry a local file, so `create_upload_link` returns a single-use URL (10 minutes, one model) and the curl command that uploads the file through it.
+In Claude.ai / Claude Desktop: Settings → Connectors → Add custom connector → `https://pocket3d.co/mcp`. Tools: `whoami`, `list_models`, `rename_model`, `delete_model`, `publish_from_url` (a `.glb` already on the web, e.g. a 3D generator's output), `create_upload_link`, and for versions `list_versions`, `publish_draft`, `set_live_version` and `delete_version` (`publish_from_url` and `create_upload_link` take a `model` to add a version instead of a new model). An MCP tool can't carry a local file, so `create_upload_link` returns a single-use URL (10 minutes, one upload) and the curl command that uploads the file through it.
 
 Agents told only "use pocket3d" can read `/llms.txt` on any instance.
 
@@ -55,9 +55,11 @@ Sign up at [pocket3d.co](https://pocket3d.co/auth/register) (or your own instanc
 npx -y pocket3d login <api-key>                 # pocket3d.co; self-hosted: login <url> <api-key>
 npx -y pocket3d whoami                          # which account the key publishes to
 npx -y pocket3d publish model.glb [--title "My model"] [--cover cover.png] [--json]
-npx -y pocket3d list [--json]                   # your models, newest first
+npx -y pocket3d publish model.glb --to <id-or-link> [--note "what changed"] [--draft]   # a new version, same link
+npx -y pocket3d versions <id-or-link>           # its history; `live <id-or-link> <N>` rolls back
+npx -y pocket3d list [--json]                   # your models, recently changed first
 npx -y pocket3d rename <id-or-link> "New title"
-npx -y pocket3d delete <id-or-link>
+npx -y pocket3d delete <id-or-link> [--version N]
 npx -y pocket3d skill [--print]                 # install the agent skill
 ```
 
@@ -65,7 +67,8 @@ npx -y pocket3d skill [--print]                 # install the agent skill
 - Models: binary glTF (`.glb`), up to 95 MB. Draco and Meshopt compression are supported.
 - Cover: PNG, JPEG or WebP, up to 5 MB, used for link previews.
 - `POCKET3D_URL` / `POCKET3D_API_KEY` override the saved login (handy in CI).
-- The dashboard lists your models (rename, delete), your keys and the apps connected through OAuth.
+- Versions: publishing `--to` an existing model adds the next version (v2, v3…) to the same link and makes it live; anyone with the link can click through the published versions in the viewer, and `/m/<id>?v=3` keeps showing v3. A draft (`--draft`) stays private until you publish it; "make live" on an older version rolls back. Numbers are never reused, a model keeps up to 200 versions, and every version counts toward the storage limit.
+- The dashboard lists your models (rename, delete, versions: publish a new one, make live, edit notes, delete), your keys and the apps connected through OAuth.
 
 ## Accounts
 

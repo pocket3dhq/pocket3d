@@ -22,7 +22,8 @@ export default async function UploadLinkPage({ params }: Props) {
   const { token } = await params;
   const ticket = await getTicket(token);
 
-  if (!ticket) {
+  // a link made for a version of a model that was deleted since
+  if (!ticket || (ticket.forVersion && !ticket.model)) {
     return (
       <AuthShell title="This upload link doesn't work any more">
         <Notice>It was already used, or it expired (links last 10 minutes).</Notice>
@@ -30,6 +31,26 @@ export default async function UploadLinkPage({ params }: Props) {
           Ask your AI assistant for a new upload link. If you already uploaded the model through this link, the assistant
           can find its share link for you.
         </p>
+      </AuthShell>
+    );
+  }
+
+  if (ticket.model) {
+    return (
+      <AuthShell
+        title={`${ticket.draft ? 'Upload a draft of' : 'Upload a new version of'} “${ticket.model.title}”`}
+        subtitle={
+          ticket.draft
+            ? 'Drop the .glb file your assistant asked for. It stays private until the owner publishes it from their dashboard.'
+            : 'Drop the .glb file your assistant asked for. It replaces what people see at the same link; the current version stays in its history.'
+        }
+      >
+        <UploadForm
+          token={token}
+          title={null}
+          expiresAt={ticket.expiresAt}
+          version={{ draft: ticket.draft, note: ticket.note }}
+        />
       </AuthShell>
     );
   }
@@ -44,7 +65,18 @@ export default async function UploadLinkPage({ params }: Props) {
   );
 }
 
-async function getTicket(token: string): Promise<{ title: string | null; expiresAt: string } | null> {
+// GET /public/v1/uploads/:token: what the link allows (a new model, or a
+// version of one model) without using it up
+interface Ticket {
+  title: string | null;
+  expiresAt: string;
+  forVersion: boolean;
+  model: { title: string; url: string } | null;
+  draft: boolean;
+  note: string | null;
+}
+
+async function getTicket(token: string): Promise<Ticket | null> {
   if (!/^p3d_up_[A-Za-z0-9]{1,100}$/.test(token)) {
     return null;
   }

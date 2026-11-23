@@ -21,7 +21,7 @@ import {
 type State =
   | { step: 'pick' }
   | { step: 'uploading'; progress: number }
-  | { step: 'done'; url: string; title: string }
+  | { step: 'done'; url: string; title: string; version?: number; draft?: boolean }
   | { step: 'failed'; message: string };
 
 const NOT_GLB =
@@ -34,10 +34,13 @@ export const UploadForm: FC<{
   token: string;
   title: string | null;
   expiresAt: string;
-}> = ({ token, title: ticketTitle, expiresAt }) => {
+  // set: the link adds a version (or a draft) to a model, which keeps its title
+  version?: { draft: boolean; note: string | null };
+}> = ({ token, title: ticketTitle, expiresAt, version }) => {
   const inputId = useId();
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState(ticketTitle || '');
+  const [note, setNote] = useState(version?.note || '');
   const [problem, setProblem] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [state, setState] = useState<State>({ step: 'pick' });
@@ -80,7 +83,7 @@ export const UploadForm: FC<{
     setState({ step: 'uploading', progress: 0 });
     const result = await sendUpload(
       `/api/public/v1/uploads/${encodeURIComponent(token)}`,
-      { file, title: title.trim() },
+      version ? { file, note: note.trim() } : { file, title: title.trim() },
       (progress) => setState({ step: 'uploading', progress })
     );
     if (result.status === 201 && result.body?.url) {
@@ -88,6 +91,8 @@ export const UploadForm: FC<{
         step: 'done',
         url: result.body.url,
         title: result.body.title || title,
+        version: result.body.version,
+        draft: result.body.status === 'draft',
       });
       return;
     }
@@ -95,11 +100,25 @@ export const UploadForm: FC<{
     setState({ step: 'failed', message: reason });
   };
 
+  if (state.step === 'done' && state.draft) {
+    return (
+      <div className="flex flex-col gap-[16px]">
+        <Notice tone="info">
+          Draft v{state.version} of “{state.title}” is saved. It stays private until the owner publishes it from their
+          dashboard.
+        </Notice>
+        <p className="text-[14px] text-textMuted">You can close this page. Your assistant can find the draft too.</p>
+      </div>
+    );
+  }
+
   if (state.step === 'done') {
     return (
       <div className="flex flex-col gap-[16px]">
         <Notice tone="info">
-          “{state.title}” is published. Anyone with this link can open it:
+          {state.version && state.version > 1
+            ? `v${state.version} of “${state.title}” is live at the same link:`
+            : `“${state.title}” is published. Anyone with this link can open it:`}
         </Notice>
         <div className="break-all rounded-control border border-line bg-bgInner px-[12px] py-[10px] font-mono text-[14px]">
           {state.url}
@@ -181,14 +200,25 @@ export const UploadForm: FC<{
 
       <Notice>{problem}</Notice>
 
-      <Field
-        label="Title (optional)"
-        hint="Shown on the viewer page and in link previews. Defaults to the file name."
-        value={title}
-        maxLength={TITLE_MAX_LENGTH}
-        disabled={uploading}
-        onChange={(event) => setTitle(event.target.value)}
-      />
+      {version ? (
+        <Field
+          label="What changed (optional)"
+          hint="Shown with this version in the model's history."
+          value={note}
+          maxLength={280}
+          disabled={uploading}
+          onChange={(event) => setNote(event.target.value)}
+        />
+      ) : (
+        <Field
+          label="Title (optional)"
+          hint="Shown on the viewer page and in link previews. Defaults to the file name."
+          value={title}
+          maxLength={TITLE_MAX_LENGTH}
+          disabled={uploading}
+          onChange={(event) => setTitle(event.target.value)}
+        />
+      )}
 
       {uploading ? (
         <div className="flex flex-col gap-[6px]" role="status">

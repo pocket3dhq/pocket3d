@@ -39,20 +39,30 @@ export const checkCover = (file: File): string | null => {
 
 export type UploadResult = {
   status: number;
-  body: { url?: string; title?: string; message?: string | string[] } | null;
+  body: {
+    url?: string;
+    title?: string;
+    version?: number;
+    status?: 'draft' | 'published';
+    live?: number | null;
+    message?: string | string[];
+  } | null;
 };
 
 // XMLHttpRequest rather than fetch: it reports upload progress. `path` is
 // /api/public/v1/uploads/<token> on this origin
 export const sendUpload = (
   path: string,
-  { file, title, cover }: { file: File; title?: string; cover?: File | null },
+  { file, title, note, cover }: { file: File; title?: string; note?: string; cover?: File | null },
   onProgress: (ratio: number) => void
 ) =>
   new Promise<UploadResult>((resolve) => {
     const data = new FormData();
     if (title) {
       data.append('title', title);
+    }
+    if (note) {
+      data.append('note', note);
     }
     data.append('file', file);
     if (cover) {

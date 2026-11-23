@@ -31,6 +31,19 @@ npx -y pocket3d publish model.glb --title "Short title" --cover cover.png --json
 - \`--cover\` is optional: a PNG, JPEG or WebP up to 5 MB (a render of the model, ideally 1200×630) used for link previews.
 - Errors go to stderr with a non-zero exit code; read the message, it says what to fix.
 
+## Update a model
+
+When you change a model the user already has a link for (a fix, the next iteration of the same object), publish to that model instead of creating a new one:
+
+\`\`\`sh
+npx -y pocket3d publish model.glb --to <id-or-link> --note "what changed" --json
+\`\`\`
+
+- The link stays the same and shows the new version at once. Earlier versions stay in its history (people with the link can click through them), and \`<link>?v=2\` keeps showing v2. The JSON adds \`version\` and \`versionUrl\`.
+- \`--title\` is for new models only (rename with \`pocket3d rename\`). Publish a new model only for a different object.
+- To let the user check a change before people with the link see it, add \`--draft\`: the version stays private and the command prints its preview link (in the user's dashboard). Publish it when they approve: \`npx -y pocket3d publish-draft <id-or-link> <version>\` (add \`--live\` to also make the link show it).
+- \`npx -y pocket3d versions <id-or-link> --json\` lists the versions; \`npx -y pocket3d live <id-or-link> <version>\` chooses which published one the link shows (to roll back). A version is \`3\` or \`v3\`.
+
 ## Requirements
 
 - Binary glTF 2.0 (\`.glb\`), up to 95 MB. Draco and Meshopt compression are supported.
@@ -40,12 +53,13 @@ npx -y pocket3d publish model.glb --title "Short title" --cover cover.png --json
 ## Manage models
 
 \`\`\`sh
-npx -y pocket3d list --json                 # newest first, with links
+npx -y pocket3d list --json                 # recently changed first, with links
 npx -y pocket3d rename <id-or-link> "New title"
-npx -y pocket3d delete <id-or-link>         # the link stops working; ask the user first
+npx -y pocket3d delete <id-or-link>         # the model and all its versions; the link stops working
+npx -y pocket3d delete <id-or-link> --version 2   # one version (not the live one)
 \`\`\`
 
-Every publish creates a new link. To replace a model, publish the new file, give the user the new link, and delete the old one only if they agree.
+Deleting can't be undone: ask the user first.
 
 ## Without Node.js
 
@@ -53,11 +67,11 @@ Every publish creates a new link. To replace a model, publish the new file, give
 curl -sS -H "Authorization: $POCKET3D_API_KEY" -F "file=@model.glb" -F "title=Short title" -F "cover=@cover.png" ${base}/api/public/v1/assets
 \`\`\`
 
-The JSON answer has the share link in \`url\`. API reference: ${base}/api/docs
+The JSON answer has the share link in \`url\`. A new version of an existing model: the same with \`-F "note=what changed"\` (and \`-F "draft=true"\` for a draft) to ${base}/api/public/v1/assets/<id>/versions. API reference: ${base}/api/docs
 
 ## MCP
 
-If the pocket3d MCP server is connected (${base}/mcp), its tools do the same: \`create_upload_link\` for local files (run the curl command it returns; if your network can't reach ${base}, give the user its \`upload_page\` link to upload from their browser), \`publish_from_url\` for a .glb already on the web, plus \`list_models\`, \`rename_model\`, \`delete_model\` and \`whoami\`.
+If the pocket3d MCP server is connected (${base}/mcp), its tools do the same: \`create_upload_link\` for local files (run the curl command it returns; if your network can't reach ${base}, give the user its \`upload_page\` link to upload from their browser), \`publish_from_url\` for a .glb already on the web, plus \`list_models\`, \`rename_model\`, \`delete_model\` and \`whoami\`. Both publish tools take \`model\` (and \`note\`, \`draft\`) to add a version to an existing model; \`list_versions\`, \`publish_draft\`, \`set_live_version\` and \`delete_version\` manage them.
 `;
 }
 

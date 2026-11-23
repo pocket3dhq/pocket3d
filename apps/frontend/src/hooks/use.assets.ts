@@ -3,14 +3,20 @@
 import useSWR from 'swr';
 import { swrFetcher } from '@pocket3d/frontend/lib/api';
 
+// A model in the list: its live version's file, and how many versions and
+// drafts it keeps
 export interface OwnedAsset {
   id: string;
   title: string;
-  path: string;
+  path: string | null;
   coverPath: string | null;
   fileSize: number;
   createdAt: string;
+  activityAt: string;
   url: string;
+  version: number | null;
+  versions: number;
+  drafts: number;
 }
 
 export interface AssetsPage {
@@ -22,5 +28,5 @@ export interface AssetsPage {
   storage: { used: number; limit: number | null };
 }
 
-// GET /assets?page=: the signed-in org's models
+// GET /assets?page=: the signed-in org's models, recently changed first
 export const useAssets = (page: number) => useSWR<AssetsPage>(`/assets?page=${page}`, swrFetcher);
