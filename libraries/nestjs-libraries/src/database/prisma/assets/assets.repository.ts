@@ -54,7 +54,13 @@ const ownerVersionFields = { ...publicVersionFields, status: true, sourceName: t
 // Only for removing files when a version or a model is deleted
 const storageFields = { path: true, coverPath: true } as const;
 
-const assetFields = { id: true, title: true, createdAt: true, activityAt: true } as const;
+const assetFields = { id: true, title: true, createdAt: true, activityAt: true, allowDownload: true } as const;
+
+export type StatKind = 'views' | 'downloads';
+export interface StatCounts {
+  views: number;
+  downloads: number;
+}
 
 export type PublicVersion = Prisma.AssetVersionGetPayload<{ select: typeof publicVersionFields }>;
 export type OwnerVersion = Prisma.AssetVersionGetPayload<{ select: typeof ownerVersionFields }>;
@@ -72,7 +78,7 @@ export type StoredVersionFiles = Prisma.AssetVersionGetPayload<{ select: typeof 
 // published, non-deleted version of this model
 @Injectable()
 export class AssetsRepository {
-  constructor(private _db: PrismaRepository<'asset' | 'assetVersion' | '$transaction'>) {}
+  constructor(private _db: PrismaRepository<'asset' | 'assetVersion' | 'assetDailyStat' | '$transaction'>) {}
 
   // Locks the model row for the rest of the transaction; false when the org
   // doesn't own a live model with this id
@@ -304,7 +310,8 @@ export class AssetsRepository {
   }
 
   // One page of the org's models, recently changed first, with the live
-  // version's file and the count of versions and drafts of each
+  // version's file, the count of versions and drafts of each, and its views
+  // and downloads
   async listForOrg(organizationId: string, skip: number, take: number) {
     const where: Prisma.AssetWhereInput = { organizationId, deletedAt: null };
     const [assets, total] = await Promise.all([
@@ -321,7 +328,7 @@ export class AssetsRepository {
       this._db.model.asset.count({ where }),
     ]);
     const ids = assets.map((asset) => asset.id);
-    const [counts, covers] = ids.length
+    const [counts, covers, stats] = ids.length
       ? await Promise.all([
           this._db.model.assetVersion.groupBy({
             by: ['assetId', 'status'],
@@ -329,9 +336,10 @@ export class AssetsRepository {
             _count: { _all: true },
           }),
           this.publishedCovers(ids),
+          this.statTotals(ids),
         ])
-      : [[], []];
-    return { assets, total, counts, covers };
+      : [[], [], new Map<string, StatCounts>()];
+    return { assets, total, counts, covers, stats };
   }
 
   // Covers of published versions, newest first: a version without its own
@@ -355,6 +363,58 @@ export class AssetsRepository {
       data: { title },
     });
     return count > 0;
+  }
+
+  async setAllowDownload(organizationId: string, id: string, allowDownload: boolean) {
+    const { count } = await this._db.model.asset.updateMany({
+      where: { id, organizationId, deletedAt: null },
+      data: { allowDownload },
+    });
+    return count > 0;
+  }
+
+  // What a view or download beacon needs to decide whether it counts:
+  // the owner (null: ownerless, nobody to show it to) and the download switch
+  findStatTarget(id: string) {
+    return this._db.model.asset.findFirst({
+      where: { id, deletedAt: null },
+      select: { organizationId: true, allowDownload: true },
+    });
+  }
+
+  // +1 on today's row (UTC), created on the first count of the day. One
+  // INSERT … ON CONFLICT DO UPDATE in Postgres, so parallel beacons never
+  // lose a count or collide on the key
+  async incrementStat(assetId: string, day: Date, kind: StatKind) {
+    await this._db.model.assetDailyStat.upsert({
+      where: { assetId_day: { assetId, day } },
+      create: { assetId, day, [kind]: 1 },
+      update: { [kind]: { increment: 1 } },
+      select: { assetId: true },
+    });
+  }
+
+  // All-time counts per model (a page of the list)
+  async statTotals(assetIds: string[]): Promise<Map<string, StatCounts>> {
+    const rows = assetIds.length
+      ? await this._db.model.assetDailyStat.groupBy({
+          by: ['assetId'],
+          where: { assetId: { in: assetIds } },
+          _sum: { views: true, downloads: true },
+        })
+      : [];
+    return new Map(rows.map((row) => [row.assetId, { views: row._sum.views || 0, downloads: row._sum.downloads || 0 }]));
+  }
+
+  // One model's counts: all time, and since `from` (a UTC day)
+  async statsFor(assetId: string, from: Date) {
+    const sum = { views: true, downloads: true } as const;
+    const [all, recent] = await Promise.all([
+      this._db.model.assetDailyStat.aggregate({ where: { assetId }, _sum: sum }),
+      this._db.model.assetDailyStat.aggregate({ where: { assetId, day: { gte: from } }, _sum: sum }),
+    ]);
+    const counts = (row: typeof all): StatCounts => ({ views: row._sum.views || 0, downloads: row._sum.downloads || 0 });
+    return { ...counts(all), recent: counts(recent) };
   }
 
   // The model and all its versions. Returns the files to remove once
@@ -389,6 +449,8 @@ export class AssetsRepository {
     const where: Prisma.AssetVersionWhereInput = { assetId: { in: assetIds }, deletedAt: null };
     const files = await tx.assetVersion.findMany({ where, select: storageFields });
     await tx.assetVersion.updateMany({ where, data: { deletedAt: now } });
+    // the counts go with the model: nobody can see them any more
+    await tx.assetDailyStat.deleteMany({ where: { assetId: { in: assetIds } } });
     return files;
   }
 }

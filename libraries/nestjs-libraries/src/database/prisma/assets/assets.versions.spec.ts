@@ -61,6 +61,7 @@ const setup = () => {
     }),
     getPublicAsset: jest.fn(),
     storageUsed: jest.fn().mockResolvedValue(0),
+    statsFor: jest.fn().mockResolvedValue({ views: 0, downloads: 0, recent: { views: 0, downloads: 0 } }),
   };
   const storage = { removeFile: jest.fn().mockResolvedValue(undefined), uploadStream: jest.fn() };
   jest.spyOn(UploadFactory, 'createStorage').mockReturnValue(storage);

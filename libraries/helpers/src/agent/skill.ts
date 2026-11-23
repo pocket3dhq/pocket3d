@@ -55,11 +55,14 @@ npx -y pocket3d publish model.glb --to <id-or-link> --note "what changed" --json
 \`\`\`sh
 npx -y pocket3d list --json                 # recently changed first, with links
 npx -y pocket3d rename <id-or-link> "New title"
+npx -y pocket3d downloads <id-or-link> on   # a Download button on the link (off: hide it)
 npx -y pocket3d delete <id-or-link>         # the model and all its versions; the link stops working
 npx -y pocket3d delete <id-or-link> --version 2   # one version (not the live one)
 \`\`\`
 
 Deleting can't be undone: ask the user first.
+
+Downloads are off by default: people with the link can look at the model but get no Download button. Turn them on (\`downloads <link> on\`, or \`--downloadable\` when publishing a new model) only when the user asks: anyone with the link can then save their file. \`list --json\` also gives each model's \`views\` and \`downloads\`.
 
 ## Without Node.js
 
@@ -71,7 +74,7 @@ The JSON answer has the share link in \`url\`. A new version of an existing mode
 
 ## MCP
 
-If the pocket3d MCP server is connected (${base}/mcp), its tools do the same: \`create_upload_link\` for local files (run the curl command it returns; if your network can't reach ${base}, give the user its \`upload_page\` link to upload from their browser), \`publish_from_url\` for a .glb already on the web, plus \`list_models\`, \`rename_model\`, \`delete_model\` and \`whoami\`. Both publish tools take \`model\` (and \`note\`, \`draft\`) to add a version to an existing model; \`list_versions\`, \`publish_draft\`, \`set_live_version\` and \`delete_version\` manage them.
+If the pocket3d MCP server is connected (${base}/mcp), its tools do the same: \`create_upload_link\` for local files (run the curl command it returns; if your network can't reach ${base}, give the user its \`upload_page\` link to upload from their browser), \`publish_from_url\` for a .glb already on the web, plus \`list_models\`, \`rename_model\`, \`set_model_downloads\`, \`delete_model\` and \`whoami\`. Both publish tools take \`model\` (and \`note\`, \`draft\`) to add a version to an existing model; \`list_versions\`, \`publish_draft\`, \`set_live_version\` and \`delete_version\` manage them.
 `;
 }
 

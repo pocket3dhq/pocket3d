@@ -113,19 +113,23 @@ model AuthToken {
 // A published 3D model. The id is also the share link: MAIN_URL/m/<id>.
 // The files live in its versions (AssetVersion); the link shows the live one
 model Asset {
-  id             String         @id // 12-char crypto-random base62 (makeId), unguessable
+  id             String           @id // 12-char crypto-random base62 (makeId), unguessable
   organizationId String? // null: published before accounts existed (nobody can change it)
   title          String
   // Last version number handed out (drafts included). Only goes up, so a
   // number is never reused. Incremented in the transaction that adds a version
-  lastNumber     Int            @default(0)
+  lastNumber     Int              @default(0)
   // Last upload or publish: the owner's list puts recently changed models first
-  activityAt     DateTime       @default(now())
+  activityAt     DateTime         @default(now())
   // What /m/<id> shows. Always a published, non-deleted version of this asset
   // (AssetVersionsService keeps it so, under a row lock)
-  liveVersionId  String?        @unique
-  liveVersion    AssetVersion?  @relation("live", fields: [liveVersionId], references: [id], onDelete: SetNull)
-  versions       AssetVersion[] @relation("versions")
+  liveVersionId  String?          @unique
+  liveVersion    AssetVersion?    @relation("live", fields: [liveVersionId], references: [id], onDelete: SetNull)
+  versions       AssetVersion[]   @relation("versions")
+  // The share link shows a Download button. Off by default: hiding it can't
+  // stop a visitor saving the file the viewer loads, it only stops offering it
+  allowDownload  Boolean          @default(false)
+  stats          AssetDailyStat[]
   // Legacy, from before versions: copied into each model's v1 by the
   // asset_versions migration and no longer read or written. Dropped in a
   // later release, once production is verified
@@ -135,10 +139,10 @@ model Asset {
   coverName      String?
   coverPath      String?
   coverSize      Int?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
   deletedAt      DateTime?
-  organization   Organization?  @relation(fields: [organizationId], references: [id])
+  organization   Organization?    @relation(fields: [organizationId], references: [id])
 
   @@index([createdAt])
   @@index([organizationId, deletedAt, createdAt])
@@ -164,7 +168,7 @@ enum VersionStatus {
 // upload; only the note can be edited. Addressed by (assetId, number), never
 // by its id outside the server
 model AssetVersion {
-  id          String        @id @default(uuid())
+  id          String         @id @default(uuid())
   assetId     String
   number      Int
   name        String // storage key of the .glb (never leaves the server)
@@ -174,17 +178,30 @@ model AssetVersion {
   coverPath   String? // public URL of the cover image (link previews)
   coverSize   Int? // bytes; with fileSize, counts toward MAX_STORAGE_PER_ORG_MB
   note        String? // what changed, up to 280 characters; public once published
-  status      VersionStatus @default(PUBLISHED)
+  status      VersionStatus  @default(PUBLISHED)
   publishedAt DateTime? // null while a draft
   source      VersionSource?
   sourceName  String? // the API key or connected app that sent it: shown to the owner only
-  createdAt   DateTime      @default(now())
+  createdAt   DateTime       @default(now())
   deletedAt   DateTime?
-  asset       Asset         @relation("versions", fields: [assetId], references: [id])
-  liveOf      Asset?        @relation("live")
+  asset       Asset          @relation("versions", fields: [assetId], references: [id])
+  liveOf      Asset?         @relation("live")
 
   @@unique([assetId, number])
   @@index([assetId, deletedAt, status, number])
+}
+
+// How often a model's share link was opened and its Download button used,
+// per UTC day. Only counts: no IPs, cookies or user agents. Shown to the
+// owner only; removed with the model
+model AssetDailyStat {
+  assetId   String
+  day       DateTime @db.Date
+  views     Int      @default(0)
+  downloads Int      @default(0)
+  asset     Asset    @relation(fields: [assetId], references: [id])
+
+  @@id([assetId, day])
 }
 
 // A single-use upload link (MCP create_upload_link): lets an agent with a
@@ -204,8 +221,8 @@ model UploadTicket {
   sourceName     String?
   expiresAt      DateTime
   usedAt         DateTime?
-  createdAt      DateTime     @default(now())
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
   @@index([expiresAt])

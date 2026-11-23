@@ -4,12 +4,14 @@ import { FC, useCallback, useEffect, useRef, useState } from 'react';
 import { ModelViewer } from './model.viewer';
 import { VersionsPanel } from './versions.panel';
 import { canPrefetch, isTyping, neighbours, PanelVersion, shortDate, versionHref } from './versions';
+import { downloadFile, downloadFileName, firstViewInTab, formatSize, sendStat } from './download';
 
 // The public viewer (/m/<id>): the model, its title, and when it has more
 // than one published version, the history to click through. Everything it
 // shows comes from the server render (published versions only), so
 // switching versions never asks the API anything and the model URL always
-// comes from that list, never from the address bar
+// comes from that list, never from the address bar. When the owner allows
+// it, a Download button saves the version on screen
 export const ViewerWithVersions: FC<{
   id: string;
   title: string;
@@ -18,12 +20,14 @@ export const ViewerWithVersions: FC<{
   // ?v= named a version that is deleted or not public: the live one is shown
   missing?: number;
   versions: PanelVersion[];
-}> = ({ id, title, live, shown: initialShown, missing, versions }) => {
+  allowDownload?: boolean;
+}> = ({ id, title, live, shown: initialShown, missing, versions, allowDownload }) => {
   const [shown, setShown] = useState(initialShown);
   // open when the link named a version: it was shared to show that one
   const [open, setOpen] = useState(initialShown !== live || missing !== undefined);
   const [notice, setNotice] = useState(missing);
   const [copied, setCopied] = useState<number | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const prefetched = useRef(new Set<string>());
 
   const base = `/m/${id}`;
@@ -63,6 +67,24 @@ export const ViewerWithVersions: FC<{
     if (older) prefetch(older);
   }, [shown, live, title, hasHistory, versions, prefetch]);
 
+  // One view per visit (not per reload or version switch). Automated
+  // browsers don't count
+  useEffect(() => {
+    if (navigator.webdriver || !firstViewInTab(id)) return;
+    sendStat(id, 'views');
+  }, [id]);
+
+  const download = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    sendStat(id, 'downloads');
+    try {
+      await downloadFile(current.path, downloadFileName(title, current.number, live));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // [ and ] step through versions from anywhere on the page
   useEffect(() => {
     if (!hasHistory) return;
@@ -101,6 +123,24 @@ export const ViewerWithVersions: FC<{
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden className={open ? 'rotate-180' : undefined}>
               <polyline points="6 9 12 15 18 9" />
             </svg>
+          </button>
+        )}
+        {allowDownload && (
+          <button
+            type="button"
+            onClick={download}
+            aria-busy={downloading || undefined}
+            title={`Download ${downloadFileName(title, current.number, live)} (${formatSize(current.fileSize)})`}
+            className="pointer-events-auto ms-auto flex shrink-0 items-center gap-[6px] rounded-control border border-line bg-bgInner/80 px-[10px] py-[5px] font-mono text-[12px] text-textColor backdrop-blur hover:border-textColor/30 disabled:opacity-60"
+            disabled={downloading}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 3v12" />
+              <polyline points="7 10 12 15 17 10" />
+              <path d="M5 21h14" />
+            </svg>
+            <span className="max-sm:sr-only">{downloading ? 'Downloading…' : 'Download'}</span>
+            <span className="text-textMuted max-sm:hidden">{formatSize(current.fileSize)}</span>
           </button>
         )}
       </header>

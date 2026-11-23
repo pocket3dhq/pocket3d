@@ -3,8 +3,8 @@
 import useSWR from 'swr';
 import { swrFetcher } from '@pocket3d/frontend/lib/api';
 
-// A model in the list: its live version's file, and how many versions and
-// drafts it keeps
+// A model in the list: its live version's file, how many versions and
+// drafts it keeps, and how often its link was viewed and its file downloaded
 export interface OwnedAsset {
   id: string;
   title: string;
@@ -17,6 +17,9 @@ export interface OwnedAsset {
   version: number | null;
   versions: number;
   drafts: number;
+  allowDownload: boolean;
+  views: number;
+  downloads: number;
 }
 
 export interface AssetsPage {

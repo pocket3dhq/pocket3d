@@ -127,7 +127,7 @@ describe('agents (e2e)', () => {
 
       const tools = await mcp(key, 'tools/list');
       expect(tools.body.result.tools.map((tool: any) => tool.name).sort()).toEqual(
-        ['create_upload_link', 'delete_model', 'delete_version', 'list_models', 'list_versions', 'publish_draft', 'publish_from_url', 'rename_model', 'set_live_version', 'whoami'].sort()
+        ['create_upload_link', 'delete_model', 'delete_version', 'list_models', 'list_versions', 'publish_draft', 'publish_from_url', 'rename_model', 'set_live_version', 'set_model_downloads', 'whoami'].sort()
       );
 
       const published = (await publish(t, key, 'Chair')).body;
@@ -163,7 +163,7 @@ describe('agents (e2e)', () => {
       try {
         expect(client.getNegotiatedProtocolVersion()).toBe('2026-07-28');
         const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
-        expect(tools).toEqual(['create_upload_link', 'delete_model', 'delete_version', 'list_models', 'list_versions', 'publish_draft', 'publish_from_url', 'rename_model', 'set_live_version', 'whoami']);
+        expect(tools).toEqual(['create_upload_link', 'delete_model', 'delete_version', 'list_models', 'list_versions', 'publish_draft', 'publish_from_url', 'rename_model', 'set_live_version', 'set_model_downloads', 'whoami']);
         const listed = await client.callTool({ name: 'list_models', arguments: {} });
         const text = (listed.content as { type: string; text: string }[])[0].text;
         expect(JSON.parse(text).models).toEqual([expect.objectContaining({ id: published.id, title: 'Modern' })]);

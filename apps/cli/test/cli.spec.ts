@@ -32,6 +32,8 @@ describe('pocket3d CLI', () => {
   const published: { auth?: string; body: string }[] = [];
   const calls: { method: string; body: string }[] = [];
   const versionCalls: { method: string; url: string; body: string }[] = [];
+  // the next PUT answers 500 (publish --downloadable's second call failing)
+  let failNextPut = false;
 
   beforeAll(async () => {
     expect(existsSync(CLI)).toBe(true);
@@ -55,7 +57,20 @@ describe('pocket3d CLI', () => {
       if (req.url?.startsWith('/api/public/v1/assets?page=') && req.method === 'GET') {
         if (!authorized) return json(401, { msg: 'Invalid API key' });
         return json(200, {
-          assets: [{ id: 'AAAAAAAAAAAA', title: 'Robot', url: `${url}/m/AAAAAAAAAAAA`, fileSize: 2048, createdAt: '2026-11-21T10:00:00.000Z' }],
+          assets: [
+            { id: 'AAAAAAAAAAAA', title: 'Robot', url: `${url}/m/AAAAAAAAAAAA`, fileSize: 2048, createdAt: '2026-11-21T10:00:00.000Z' },
+            {
+              id: 'CCCCCCCCCCCC',
+              title: 'Chair',
+              url: `${url}/m/CCCCCCCCCCCC`,
+              fileSize: 2048,
+              createdAt: '2026-11-21T10:00:00.000Z',
+              allowDownload: true,
+              views: 12,
+              downloads: 1,
+            },
+            { id: 'DDDDDDDDDDDD', title: 'Lamp', url: `${url}/m/DDDDDDDDDDDD`, fileSize: 2048, createdAt: '2026-11-21T10:00:00.000Z', allowDownload: false, views: 1, downloads: 0 },
+          ],
           page: Number(req.url.split('=')[1]),
           pages: 1,
           total: 1,
@@ -66,8 +81,18 @@ describe('pocket3d CLI', () => {
         if (!authorized) return json(401, { msg: 'Invalid API key' });
         calls.push({ method: 'PUT', body: body.toString('utf8') });
         versionCalls.push({ method: 'PUT', url: req.url, body: body.toString('utf8') });
+        if (failNextPut) {
+          failNextPut = false;
+          return json(500, { message: 'Internal server error' });
+        }
         const sent = JSON.parse(body.toString('utf8'));
-        return json(200, { id: 'AAAAAAAAAAAA', title: sent.title ?? 'Robot', url: `${url}/m/AAAAAAAAAAAA`, version: sent.liveVersion ?? 3 });
+        return json(200, {
+          id: 'AAAAAAAAAAAA',
+          title: sent.title ?? 'Robot',
+          url: `${url}/m/AAAAAAAAAAAA`,
+          version: sent.liveVersion ?? 3,
+          allowDownload: sent.allowDownload ?? false,
+        });
       }
       if (req.url === '/api/public/v1/assets/AAAAAAAAAAAA' && req.method === 'DELETE') {
         if (!authorized) return json(401, { msg: 'Invalid API key' });
@@ -111,6 +136,10 @@ describe('pocket3d CLI', () => {
       // a server from before versions: Nest doesn't know the route
       if (req.url === '/api/public/v1/assets/OLDSERVER000/versions') {
         return json(404, { message: 'Cannot POST /public/v1/assets/OLDSERVER000/versions', error: 'Not Found', statusCode: 404 });
+      }
+      // a server from before downloads: the unknown field is stripped
+      if (req.url === '/api/public/v1/assets/OLDDOWNLOAD1' && req.method === 'PUT') {
+        return json(400, { message: 'Nothing to change: send a title, a liveVersion, or both.', statusCode: 400 });
       }
       if (req.url?.startsWith('/api/public/v1/assets/') && (req.method === 'PUT' || req.method === 'DELETE')) {
         return json(404, { message: 'Model not found' });
@@ -233,10 +262,59 @@ describe('pocket3d CLI', () => {
     const env = { ...loggedIn, POCKET3D_URL: url };
     const text = await run(['list'], env);
     expect(text.code).toBe(0);
-    expect(text.stdout).toContain(`${url}/m/AAAAAAAAAAAA  Robot  (2 KB, 2026-11-21)`);
+    expect(text.stdout).toContain(`${url}/m/AAAAAAAAAAAA  Robot  (2 KB, 2026-11-21)\n`);
+    expect(text.stdout).toContain(`${url}/m/CCCCCCCCCCCC  Chair  (2 KB, 2026-11-21, 12 views, 1 download)`);
+    expect(text.stdout).toContain(`${url}/m/DDDDDDDDDDDD  Lamp  (2 KB, 2026-11-21, 1 view)`);
     const json = await run(['list', '--json', '--page', '2'], env);
-    expect(JSON.parse(json.stdout)).toMatchObject({ page: 2, total: 1, models: [{ id: 'AAAAAAAAAAAA', title: 'Robot' }] });
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      page: 2,
+      total: 1,
+      models: [
+        { id: 'AAAAAAAAAAAA', title: 'Robot', allowDownload: false, views: 0, downloads: 0 },
+        { id: 'CCCCCCCCCCCC', allowDownload: true, views: 12, downloads: 1 },
+        { id: 'DDDDDDDDDDDD', allowDownload: false, views: 1 },
+      ],
+    });
     expect((await run(['list', '--page', 'x'], env)).stderr).toContain('--page');
+  });
+
+  it('downloads on|off sets the Download button, and explains an older server', async () => {
+    const env = { ...loggedIn, POCKET3D_URL: url };
+    const on = await run(['downloads', `${url}/m/AAAAAAAAAAAA`, 'on'], env);
+    expect(on.code).toBe(0);
+    expect(on.stdout.trim()).toBe(`${url}/m/AAAAAAAAAAAA`);
+    expect(on.stderr).toContain('Downloads on');
+    expect(JSON.parse(calls.at(-1)!.body)).toEqual({ allowDownload: true });
+
+    const off = await run(['downloads', 'AAAAAAAAAAAA', 'OFF'], env);
+    expect(off.code).toBe(0);
+    expect(JSON.parse(calls.at(-1)!.body)).toEqual({ allowDownload: false });
+
+    expect((await run(['downloads', 'AAAAAAAAAAAA', 'yes'], env)).stderr).toContain('Usage: pocket3d downloads');
+    expect((await run(['downloads', 'AAAAAAAAAAAA'], env)).stderr).toContain('Usage: pocket3d downloads');
+    const old = await run(['downloads', 'OLDDOWNLOAD1', 'on'], env);
+    expect(old.code).toBe(1);
+    expect(old.stderr).toContain("doesn't support downloads yet");
+  });
+
+  it('publish --downloadable turns downloads on for the new model', async () => {
+    const env = { ...loggedIn, POCKET3D_URL: url };
+    const result = await run(['publish', writeGlb(), '--downloadable', '--json'], env);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ id: 'AAAAAAAAAAAA', allowDownload: true });
+    expect(JSON.parse(calls.at(-1)!.body)).toEqual({ allowDownload: true });
+
+    // the second call fails: still published, the link is printed, the retry is given
+    failNextPut = true;
+    const failed = await run(['publish', writeGlb(), '--downloadable'], env);
+    expect(failed.code).toBe(1);
+    expect(failed.stdout.trim()).toBe(`${url}/m/AAAAAAAAAAAA`);
+    expect(failed.stderr).toContain('Published, but downloads could not be turned on');
+    expect(failed.stderr).toContain('pocket3d downloads AAAAAAAAAAAA on');
+
+    const toExisting = await run(['publish', writeGlb(), '--to', 'AAAAAAAAAAAA', '--downloadable'], env);
+    expect(toExisting.code).toBe(1);
+    expect(toExisting.stderr).toContain('--downloadable is for new models');
   });
 
   it('rename and delete take an id or a share link', async () => {

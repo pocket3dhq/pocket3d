@@ -29,6 +29,7 @@ const repoMock = () => ({
       { assetId: 'AAAAAAAAAAAA', number: 3, coverPath: 'https://f/3.png' },
       { assetId: 'AAAAAAAAAAAA', number: 1, coverPath: 'https://f/1.png' },
     ],
+    stats: new Map([['AAAAAAAAAAAA', { views: 12, downloads: 3 }]]),
   }),
   rename: jest.fn().mockResolvedValue(true),
   softDelete: jest.fn(),
@@ -42,6 +43,7 @@ const repoMock = () => ({
   deleteVersion: jest.fn(),
   updateNote: jest.fn(),
   storageUsed: jest.fn().mockResolvedValue(0),
+  statsFor: jest.fn().mockResolvedValue({ views: 0, downloads: 0, recent: { views: 0, downloads: 0 } }),
 });
 
 const setup = () => {
@@ -82,6 +84,8 @@ describe('AssetsService (org scoping)', () => {
       path: 'https://f/2.glb',
       // v2 has no cover: it borrows v1's, never the newer v3's
       coverPath: 'https://f/1.png',
+      views: 12,
+      downloads: 3,
     });
   });
 

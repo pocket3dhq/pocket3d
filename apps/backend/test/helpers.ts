@@ -51,6 +51,7 @@ export async function resetDatabase(prisma: PrismaService) {
   await prisma.authToken.deleteMany();
   await prisma.session.deleteMany();
   await prisma.apiKey.deleteMany();
+  await prisma.assetDailyStat.deleteMany();
   // versions first: deleting them clears the models' live pointer (SetNull)
   await prisma.assetVersion.deleteMany();
   await prisma.asset.deleteMany();

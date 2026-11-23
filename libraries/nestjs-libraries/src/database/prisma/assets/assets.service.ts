@@ -13,6 +13,7 @@ import {
   AssetsRepository,
   OwnerVersion,
   PublicVersion,
+  StatKind,
   StoredVersionFiles,
   VersionRuleError,
 } from '@pocket3d/nestjs-libraries/database/prisma/assets/assets.repository';
@@ -75,6 +76,13 @@ const sourceLabel = (source: VersionSource | null) => (source ? SOURCE_LABEL[sou
 // `versions` are newest first
 const coverFor = (versions: { number: number; coverPath: string | null }[], number: number) =>
   versions.find((version) => version.number <= number && version.coverPath)?.coverPath ?? null;
+
+// The owner's "last 7 days" counts: today and the 6 days before (UTC)
+export const RECENT_STAT_DAYS = 7;
+
+// Midnight UTC of the day `at` falls in (the stats are kept per UTC day)
+export const utcDay = (at: Date = new Date()) =>
+  new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
 
 @Injectable()
 export class AssetsService {
@@ -303,20 +311,59 @@ export class AssetsService {
     return this.versionState(organizationId, id, number);
   }
 
-  // The dashboard's and the API's PUT: a new title, a new live version, or both
-  async update(organizationId: string, ref: string, changes: { title?: string; liveVersion?: unknown }) {
+  // The dashboard's and the API's PUT: a new title, a new live version,
+  // the download switch, or any of them together
+  async update(
+    organizationId: string,
+    ref: string,
+    changes: { title?: string; liveVersion?: unknown; allowDownload?: boolean }
+  ) {
     const hasTitle = typeof changes.title === 'string';
     const hasLive = changes.liveVersion !== undefined && changes.liveVersion !== null;
-    if (!hasTitle && !hasLive) {
-      throw new BadRequestException('Nothing to change: send a title, a liveVersion, or both.');
+    const hasDownload = typeof changes.allowDownload === 'boolean';
+    if (!hasTitle && !hasLive && !hasDownload) {
+      throw new BadRequestException('Nothing to change: send a title, a liveVersion, allowDownload, or several.');
     }
     if (hasLive) {
       await this.setLive(organizationId, ref, changes.liveVersion);
+    }
+    if (hasDownload) {
+      await this.setAllowDownload(organizationId, ref, changes.allowDownload as boolean);
     }
     if (hasTitle) {
       return this.rename(organizationId, ref, changes.title as string);
     }
     return this.getSummary(organizationId, ref);
+  }
+
+  // Whether the share link shows a Download button (MCP set_model_downloads,
+  // the CLI's `downloads on|off`, the dashboard switch)
+  async setAllowDownload(organizationId: string, ref: string, allowDownload: boolean) {
+    const id = assetIdFrom(ref);
+    const done = isAssetId(id) ? await this._assetsRepository.setAllowDownload(organizationId, id, allowDownload) : false;
+    if (!done) {
+      throw new NotFoundException('Model not found');
+    }
+    return this.getSummary(organizationId, id);
+  }
+
+  // A view of the share link or a click on its Download button, sent by the
+  // viewer page. Counts nothing for an unknown, deleted or ownerless model,
+  // for the owner's own visits (viewerOrgId: the signed-in visitor's org), or
+  // for a download while downloads are off. Never throws: the caller answers
+  // the same either way, so a beacon can't tell whether a model exists
+  async recordStat(id: string, kind: StatKind, viewerOrgId?: string | null) {
+    try {
+      if (!isAssetId(id)) return false;
+      const target = await this._assetsRepository.findStatTarget(id);
+      if (!target?.organizationId || target.organizationId === viewerOrgId) return false;
+      if (kind === 'downloads' && !target.allowDownload) return false;
+      await this._assetsRepository.incrementStat(id, utcDay(), kind);
+      return true;
+    } catch (err) {
+      this._logger.warn(`Could not count a ${kind === 'views' ? 'view' : 'download'} of ${id}: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   // What /m/<id> shows to anyone with the link: published versions only.
@@ -338,6 +385,7 @@ export class AssetsService {
       id: asset.id,
       title: asset.title,
       createdAt: asset.createdAt,
+      allowDownload: asset.allowDownload,
       // the shown version's file (what the page loads)
       path: shown.path,
       coverPath: shown.coverPath,
@@ -361,12 +409,21 @@ export class AssetsService {
     const published = asset.versions.filter((version) => version.status === VersionStatus.PUBLISHED);
     const live = this.liveNumber(asset.id, asset.liveVersion, published);
     const liveVersion = published.find((version) => version.number === live);
+    const from = utcDay();
+    from.setUTCDate(from.getUTCDate() - (RECENT_STAT_DAYS - 1));
+    const stats = await this._assetsRepository.statsFor(asset.id, from);
     return {
       id: asset.id,
       title: asset.title,
       url: this.shareUrl(asset.id),
       createdAt: asset.createdAt,
       activityAt: asset.activityAt,
+      allowDownload: asset.allowDownload,
+      // share-link views and Download clicks (owner only); recent: the last
+      // RECENT_STAT_DAYS days
+      views: stats.views,
+      downloads: stats.downloads,
+      recent: { days: RECENT_STAT_DAYS, ...stats.recent },
       live,
       path: liveVersion?.path ?? null,
       coverPath: liveVersion?.coverPath ?? null,
@@ -404,7 +461,7 @@ export class AssetsService {
 
   async listForOrg(organizationId: string, page = 1) {
     const current = Math.max(1, Math.floor(Number(page) || 1));
-    const { assets, total, counts, covers } = await this._assetsRepository.listForOrg(
+    const { assets, total, counts, covers, stats } = await this._assetsRepository.listForOrg(
       organizationId,
       (current - 1) * ASSETS_PAGE_SIZE,
       ASSETS_PAGE_SIZE
@@ -426,6 +483,9 @@ export class AssetsService {
           version: live?.number ?? null,
           versions: count(asset.id, VersionStatus.PUBLISHED),
           drafts: count(asset.id, VersionStatus.DRAFT),
+          allowDownload: asset.allowDownload,
+          views: stats.get(asset.id)?.views ?? 0,
+          downloads: stats.get(asset.id)?.downloads ?? 0,
         };
       }),
       page: current,
@@ -514,6 +574,9 @@ export class AssetsService {
       version: owned.live,
       versions: owned.versions,
       drafts: owned.drafts,
+      allowDownload: owned.allowDownload,
+      views: owned.views,
+      downloads: owned.downloads,
     };
   }
 

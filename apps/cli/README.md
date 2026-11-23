@@ -26,13 +26,14 @@ The installed skill stays current: whenever the CLI runs (and agents run the lat
 ## Commands
 
 ```
-pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--note "..."] [--json]
+pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--note "..."] [--downloadable] [--json]
 pocket3d publish <model.glb> --to <id-or-link> [--note "what changed"] [--draft] [--json]
 pocket3d versions <id-or-link> [--json]
 pocket3d live <id-or-link> <version>           # which version the link shows (roll back)
 pocket3d publish-draft <id-or-link> <version> [--live]
 pocket3d list [--page N] [--json]
 pocket3d rename <id-or-link> "New title"
+pocket3d downloads <id-or-link> on|off   # a Download button on the link (off by default)
 pocket3d delete <id-or-link> [--version N]
 pocket3d login <api-key>                 # pocket3d.co
 pocket3d login <url> <api-key>           # a self-hosted instance
@@ -43,6 +44,7 @@ pocket3d skill [--print] [--dir <path>]
 - Models: binary glTF, up to 95 MB (Draco / Meshopt compression supported).
 - Cover: PNG, JPEG or WebP, up to 5 MB.
 - Versions: `--to` adds a version that goes live at once on the same link; `<link>?v=3` keeps showing v3. `--draft` keeps it private (stdout is its preview link in your dashboard) until `publish-draft`. A version is `3` or `v3`.
+- Downloads: off by default. `--downloadable` (new models) or `downloads <link> on` adds a Download button to the link for the version on screen. `list` shows how many times each link was viewed and its file downloaded.
 - `login` checks the key before saving it (`~/.config/pocket3d/config.json`, mode 0600); `POCKET3D_URL` and `POCKET3D_API_KEY` override the saved login.
 - No runtime dependencies; Node 20 or later.
 

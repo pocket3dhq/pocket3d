@@ -3,7 +3,7 @@
 # validation, publish, the share page (with its link-preview tags), file
 # serving, and what agents use (llms.txt, skill.md, OAuth discovery, the MCP
 # server, upload links, publish from URL, list/rename/delete, versions and
-# drafts).
+# drafts, the Download switch and the view/download counts).
 #
 #   scripts/smoke.sh <base-url> [api-key]
 #   scripts/smoke.sh http://localhost:4200                # pnpm dev
@@ -162,6 +162,21 @@ expect "  its file is gone → 404" 404 "$(status "$v3_path")"
 expect "delete v2 → 200" 200 "$(status -X DELETE -H "Authorization: $key" "$api/public/v1/assets/$id/versions/v2")"
 expect "delete the last version → 409" 409 "$(status -X DELETE -H "Authorization: $key" "$api/public/v1/assets/$id/versions/1")"
 
+echo "downloads and counts"
+expect "  off for a new model" false "$(status "$api/public/assets/$id" >/dev/null; field allowDownload)"
+if ! grep -q '>Download</span>' <<<"$(curl -s -A 'Mozilla/5.0' "$url")"; then pass "  no Download button on the page"; else fail "  no Download button on the page"; fi
+expect "turn downloads on → 200" "200 true" "$(status -X PUT -H "Authorization: $key" "${json[@]}" -d '{"allowDownload":true}' "$api/public/v1/assets/$id") $(field allowDownload)"
+expect "  the public data says so" true "$(status "$api/public/assets/$id" >/dev/null; field allowDownload)"
+if grep -q '>Download</span>' <<<"$(curl -s -A 'Mozilla/5.0' "$url")"; then pass "  the page has a Download button"; else fail "  the page has a Download button"; fi
+expect "allowDownload \"yes\" → 400" 400 "$(status -X PUT -H "Authorization: $key" "${json[@]}" -d '{"allowDownload":"yes"}' "$api/public/v1/assets/$id")"
+expect "view beacon → 204" 204 "$(status -X POST -A 'Mozilla/5.0' "$api/public/assets/$id/views")"
+expect "download beacon → 204" 204 "$(status -X POST -A 'Mozilla/5.0' "$api/public/assets/$id/downloads")"
+expect "bot view beacon → 204" 204 "$(status -X POST -A 'Slackbot 1.0' "$api/public/assets/$id/views")"
+expect "unknown model beacon → 204" 204 "$(status -X POST -A 'Mozilla/5.0' "$api/public/assets/AAAAAAAAAAAA/views")"
+expect "  the owner sees 1 view, 1 download" "1 1" "$(status -H "Authorization: $key" "$api/public/v1/assets/$id" >/dev/null; echo "$(field views) $(field downloads)")"
+if ! grep -q '"views"' <<<"$(curl -s "$api/public/assets/$id")"; then pass "  the public data has no counts"; else fail "  the public data has no counts"; fi
+expect "turn downloads off → 200" "200 false" "$(status -X PUT -H "Authorization: $key" "${json[@]}" -d '{"allowDownload":false}' "$api/public/v1/assets/$id") $(field allowDownload)"
+
 echo "agents"
 expect "GET /llms.txt → 200" 200 "$(status "$base/llms.txt")"
 if grep -qF "$base/mcp" "$tmp/body"; then pass "llms.txt points at this instance's MCP server"; else fail "llms.txt points at this instance's MCP server"; fi
@@ -183,7 +198,7 @@ tool_result() { node -e 'const r = JSON.parse(require("fs").readFileSync(process
 expect "MCP tools/list with the key → 200" 200 "$(mcp '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')"
 has_header x-ratelimit-limit-account && pass "  rate-limited per account" || fail "  rate-limited per account"
 tools="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).result.tools.map(t => t.name).sort().join(","))' "$tmp/body" 2>/dev/null)"
-expect "  the ten tools" "create_upload_link,delete_model,delete_version,list_models,list_versions,publish_draft,publish_from_url,rename_model,set_live_version,whoami" "$tools"
+expect "  the eleven tools" "create_upload_link,delete_model,delete_version,list_models,list_versions,publish_draft,publish_from_url,rename_model,set_live_version,set_model_downloads,whoami" "$tools"
 expect "MCP list_versions → 200" 200 "$(mcp '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_versions","arguments":{"model":"'"$id"'"}}}')"
 expect "  v1 is live" "1" "$(tool_result | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).live)}catch{console.log(s.slice(0,200))}})')"
 

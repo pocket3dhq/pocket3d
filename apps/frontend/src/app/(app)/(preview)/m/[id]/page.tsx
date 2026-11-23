@@ -20,6 +20,8 @@ interface PublicAsset {
   requested?: number;
   missing?: boolean;
   previewCoverPath: string | null;
+  // the owner shows a Download button
+  allowDownload?: boolean;
   versions: PanelVersion[];
 }
 
@@ -105,6 +107,7 @@ export default async function ModelPage(props: Props) {
         shown={asset.shown}
         missing={asset.missing ? asset.requested : undefined}
         versions={asset.versions}
+        allowDownload={!!asset.allowDownload}
       />
     </ViewerChrome>
   );

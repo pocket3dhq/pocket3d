@@ -29,6 +29,12 @@ export interface OwnedModel {
   url: string;
   createdAt: string;
   activityAt: string;
+  // the share link shows a Download button
+  allowDownload: boolean;
+  // share-link visits and Download clicks, all time and the last `days` days
+  views: number;
+  downloads: number;
+  recent: { days: number; views: number; downloads: number };
   live: number | null;
   versions: number;
   drafts: number;

@@ -7,6 +7,7 @@ import { apiFetch } from '@pocket3d/frontend/lib/api';
 import { BUTTON_BASE, BUTTON_VARIANTS, Button } from '@pocket3d/frontend/components/ui/button';
 import { Notice } from '@pocket3d/frontend/components/ui/notice';
 import { Card } from '@pocket3d/frontend/components/ui/card';
+import { formatCount } from '@pocket3d/frontend/components/viewer/download';
 
 const formatSize = (bytes: number) =>
   bytes >= 1024 * 1024 * 1024
@@ -142,6 +143,12 @@ const ModelRow: FC<{ asset: OwnedAsset; onChange: () => void }> = ({
               </span>
             )}
             <span>{formatSize(asset.fileSize)}</span>
+            <span>
+              {formatCount(asset.views, 'view', 'views')}
+              {asset.allowDownload || asset.downloads > 0
+                ? ` · ${formatCount(asset.downloads, 'download', 'downloads')}${asset.allowDownload ? '' : ' (off)'}`
+                : ''}
+            </span>
             <span className="truncate font-mono">{asset.url}</span>
           </div>
         </div>

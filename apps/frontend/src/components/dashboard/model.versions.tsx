@@ -12,15 +12,12 @@ import { UploadModel } from '@pocket3d/frontend/components/dashboard/upload.mode
 import { ModelViewer } from '@pocket3d/frontend/components/viewer/model.viewer';
 import { PanelAction, VersionsPanel } from '@pocket3d/frontend/components/viewer/versions.panel';
 import { shortDate, sourceLabel } from '@pocket3d/frontend/components/viewer/versions';
+import { downloadFile, downloadFileName, formatCount, formatSize } from '@pocket3d/frontend/components/viewer/download';
 
 const NOTE_MAX_LENGTH = 280;
 
-const formatSize = (bytes: number) =>
-  bytes >= 1024 * 1024 * 1024
-    ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
-    : bytes >= 1024 * 1024
-    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+const STATS_HELP =
+  'Views: visits to the share link (embeds included) from a browser, once per tab; your own visits while signed in and link-preview bots are not counted. Downloads: clicks on the Download button of the share link. Fetching the file URL directly is not counted.';
 
 // Why a version can't be deleted (null: it can)
 const deleteBlock = (model: OwnedModel, version: OwnedVersion) => {
@@ -43,6 +40,7 @@ export const ModelVersions: FC<{ id: string; initialVersion: number | null }> = 
   const [note, setNote] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   if (error) {
@@ -93,6 +91,16 @@ export const ModelVersions: FC<{ id: string; initialVersion: number | null }> = 
   const publish = (number: number, live: boolean) =>
     run(() => apiFetch(`${base}/versions/${number}/publish`, { method: 'POST', body: { live } }));
   const makeLive = (number: number) => run(() => apiFetch(base, { method: 'PUT', body: { liveVersion: number } }));
+  const setDownloads = (allowDownload: boolean) => run(() => apiFetch(base, { method: 'PUT', body: { allowDownload } }));
+  // the owner can always save their own file (drafts too); it isn't counted
+  const download = async () => {
+    setDownloading(true);
+    try {
+      await downloadFile(shown.path, downloadFileName(model.title, shown.number, model.live));
+    } finally {
+      setDownloading(false);
+    }
+  };
   const remove = async (number: number) => {
     const done = await run(() => apiFetch(`${base}/versions/${number}`, { method: 'DELETE' }));
     if (done) {
@@ -163,12 +171,56 @@ export const ModelVersions: FC<{ id: string; initialVersion: number | null }> = 
             {model.versions} version{model.versions === 1 ? '' : 's'}
             {model.drafts ? ` · ${model.drafts} draft${model.drafts === 1 ? '' : 's'}` : ''} · {formatSize(model.storage)} in total
           </p>
+          <p className="text-[13px] text-textMuted" title={STATS_HELP}>
+            <span className="text-textColor">{formatCount(model.views, 'view', 'views')}</span> ·{' '}
+            <span className={model.allowDownload ? 'text-textColor' : undefined}>
+              {formatCount(model.downloads, 'download', 'downloads')}
+            </span>
+            {!model.allowDownload && ' (downloads off)'}
+            {' · '}last {model.recent.days} days: {formatCount(model.recent.views, 'view', 'views')},{' '}
+            {formatCount(model.recent.downloads, 'download', 'downloads')}
+          </p>
         </div>
         <div className="flex flex-wrap gap-[8px]">
+          <Button variant="outline" loading={downloading} onClick={download} title={`Save v${shown.number} (${formatSize(shown.fileSize)})`}>
+            Download
+          </Button>
           <CopyButton value={model.url} label="Copy link" />
           <a href={model.url} target="_blank" rel="noopener" className={`${BUTTON_BASE} ${BUTTON_VARIANTS.primary}`}>
             Open
           </a>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[4px] border border-line px-[16px] py-[12px]">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={model.allowDownload}
+          aria-labelledby="downloads-label"
+          disabled={busy}
+          onClick={() => setDownloads(!model.allowDownload)}
+          className={`relative h-[22px] w-[40px] shrink-0 rounded-full border transition disabled:opacity-50 ${
+            model.allowDownload ? 'border-accent bg-accent' : 'border-line bg-line'
+          }`}
+        >
+          <span
+            aria-hidden
+            className={`absolute top-[2px] h-[16px] w-[16px] rounded-full bg-textColor transition-[left] ${
+              model.allowDownload ? 'left-[20px]' : 'left-[2px]'
+            }`}
+          />
+        </button>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span id="downloads-label" className="text-[14px]">
+            Visitors can download the .glb
+          </span>
+          <span className="text-[12px] text-textMuted">
+            {model.allowDownload
+              ? 'The share link shows a Download button for the version on screen.'
+              : 'Off: no Download button on the share link.'}{' '}
+            The viewer still loads the file to show it, so turning this off can't fully stop someone saving it.
+          </span>
         </div>
       </div>
 

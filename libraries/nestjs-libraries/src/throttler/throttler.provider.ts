@@ -17,6 +17,9 @@ export const THROTTLE = {
   // OAuth for MCP connectors: no email in these bodies, so both counters are per IP
   oauthRegister: { ip: { limit: 20, ttl: 60 * MINUTE }, email: { limit: 20, ttl: 60 * MINUTE } },
   oauthToken: { ip: { limit: 60, ttl: 15 * MINUTE }, email: { limit: 60, ttl: 15 * MINUTE } },
+  // the viewer's view/download beacons: one per visit, generous for a
+  // classroom or an office behind one IP
+  stats: { ip: { limit: 120, ttl: 15 * MINUTE }, email: { limit: 120, ttl: 15 * MINUTE } },
 };
 
 // The public API and MCP: counted per account (the org the API key or the

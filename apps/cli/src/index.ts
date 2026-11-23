@@ -20,7 +20,8 @@ const CONFIG_FILE = join(
 const HELP = `pocket3d: publish a 3D model, get a link anyone can open
 
 Usage
-  pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--note "..."] [--json]
+  pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--note "..."] [--downloadable] [--json]
+                                             (--downloadable: the link shows a Download button)
   pocket3d publish <model.glb> --to <id-or-link> [--note "what changed"] [--cover cover.png] [--draft] [--json]
                                              a new version of that model: same link, live at once
                                              (--draft: private until you publish it)
@@ -29,6 +30,7 @@ Usage
   pocket3d publish-draft <id-or-link> <version> [--live]
   pocket3d list [--page N] [--json]          your models, recently changed first
   pocket3d rename <id-or-link> "New title"
+  pocket3d downloads <id-or-link> on|off     whether the link shows a Download button (off by default)
   pocket3d delete <id-or-link>               the model and all its versions; the link stops working
   pocket3d delete <id-or-link> --version <N> one version (not the live one)
   pocket3d login <api-key>                   for ${CLOUD_URL}; create a key at /dashboard/keys
@@ -258,12 +260,13 @@ async function publish(args: string[]) {
       to: { type: 'string' },
       note: { type: 'string', short: 'n' },
       draft: { type: 'boolean' },
+      downloadable: { type: 'boolean' },
       json: { type: 'boolean' },
     },
   });
   if (positionals.length !== 1) {
     throw new CliError(
-      'Usage: pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--json]\n' +
+      'Usage: pocket3d publish <model.glb> [--title "My model"] [--cover cover.png] [--downloadable] [--json]\n' +
         '   or: pocket3d publish <model.glb> --to <id-or-link> [--note "what changed"] [--draft] [--json]'
     );
   }
@@ -271,6 +274,9 @@ async function publish(args: string[]) {
   const target = values.to !== undefined ? modelId(values.to) : undefined;
   if (target && values.title !== undefined) {
     throw new CliError(`--title is for new models; a new version keeps the model's title. To rename it: pocket3d rename ${target} "New title"`);
+  }
+  if (values.downloadable && target) {
+    throw new CliError(`--downloadable is for new models; downloads are set per model: pocket3d downloads ${target} on`);
   }
   if (values.draft && !target) {
     throw new CliError("A new model can't be a draft: publish it first, then add drafts with --to <id-or-link> --draft");
@@ -315,6 +321,18 @@ async function publish(args: string[]) {
     throw new CliError(`Publish failed: the server answered without a link`);
   }
 
+  // A second call once the model exists. If it fails the model is still
+  // published: say so, give the link, and the command to retry
+  let downloadProblem: string | null = null;
+  if (values.downloadable) {
+    try {
+      await setDownloads(config, body.id, true);
+    } catch (err) {
+      downloadProblem = `Published, but downloads could not be turned on: ${(err as Error).message}\nRetry: pocket3d downloads ${body.id} on`;
+    }
+  }
+  const downloadable = values.downloadable && !downloadProblem;
+
   const draft = body.status === 'draft';
   if (values.json) {
     process.stdout.write(
@@ -327,8 +345,10 @@ async function publish(args: string[]) {
         ...(target ? { live: body.live } : {}),
         ...(body.versionUrl ? { versionUrl: body.versionUrl } : {}),
         ...(body.previewUrl ? { previewUrl: body.previewUrl } : {}),
+        ...(values.downloadable ? { allowDownload: !!downloadable } : {}),
       }) + '\n'
     );
+    if (downloadProblem) throw new CliError(downloadProblem);
     return;
   }
   if (draft) {
@@ -343,6 +363,39 @@ async function publish(args: string[]) {
   if (target) {
     process.stderr.write(`v${body.version} is live at the same link. Pinned to this version: ${body.versionUrl}\n`);
   }
+  if (downloadProblem) throw new CliError(downloadProblem);
+  if (downloadable) process.stderr.write('Visitors can download the .glb from the link.\n');
+}
+
+// PUT allowDownload. A server from before downloads drops the unknown field
+// and finds nothing to change
+async function setDownloads(config: Config, id: string, allowDownload: boolean) {
+  try {
+    return await api(config, 'PUT', `/assets/${id}`, { allowDownload });
+  } catch (err) {
+    if ((err as Error).message.includes('Nothing to change')) {
+      throw new CliError(`${config.url} doesn't support downloads yet: update that pocket3d server.`);
+    }
+    throw err;
+  }
+}
+
+// Whether the share link shows a Download button
+async function downloads(args: string[]) {
+  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
+  const state = (positionals[1] || '').trim().toLowerCase();
+  if (positionals.length !== 2 || (state !== 'on' && state !== 'off')) {
+    throw new CliError('Usage: pocket3d downloads <id-or-link> on|off');
+  }
+  const id = modelId(positionals[0]);
+  const config = await readConfig();
+  const body = await setDownloads(config, id, state === 'on');
+  process.stdout.write(`${body.url}\n`);
+  process.stderr.write(
+    state === 'on'
+      ? 'Downloads on: the link shows a Download button for the .glb.\n'
+      : 'Downloads off: the link shows no Download button.\n'
+  );
 }
 
 // The model's versions, newest first
@@ -438,6 +491,9 @@ async function list(args: string[]) {
     drafts: a.drafts ?? 0,
     fileSize: a.fileSize,
     createdAt: a.createdAt,
+    allowDownload: !!a.allowDownload,
+    views: a.views ?? 0,
+    downloads: a.downloads ?? 0,
   }));
   if (values.json) {
     process.stdout.write(
@@ -454,7 +510,13 @@ async function list(args: string[]) {
       m.versions > 1 || m.drafts
         ? `v${m.version} of ${m.versions}${m.drafts ? ` + ${m.drafts} draft${m.drafts > 1 ? 's' : ''}` : ''}, `
         : '';
-    process.stdout.write(`${m.url}  ${m.title}  (${history}${formatSize(m.fileSize)}, ${String(m.createdAt).slice(0, 10)})\n`);
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    // a server from before the counts sends none: say nothing rather than 0
+    const counted = body.assets?.find((a: any) => a.id === m.id)?.views !== undefined;
+    const stats = counted
+      ? `, ${plural(m.views, 'view')}${m.allowDownload || m.downloads ? `, ${plural(m.downloads, 'download')}${m.allowDownload ? '' : ' (off)'}` : ''}`
+      : '';
+    process.stdout.write(`${m.url}  ${m.title}  (${history}${formatSize(m.fileSize)}, ${String(m.createdAt).slice(0, 10)}${stats})\n`);
   }
   if (body.pages > 1) {
     process.stderr.write(`Page ${body.page} of ${body.pages} (${body.total} models). Next: pocket3d list --page ${body.page + 1}\n`);
@@ -601,6 +663,7 @@ const REFRESHES_SKILL = new Set([
   'list',
   'ls',
   'rename',
+  'downloads',
   'versions',
   'live',
   'publish-draft',
@@ -623,6 +686,8 @@ async function main(argv: string[]) {
       return list(rest);
     case 'rename':
       return rename(rest);
+    case 'downloads':
+      return downloads(rest);
     case 'versions':
       return versions(rest);
     case 'live':

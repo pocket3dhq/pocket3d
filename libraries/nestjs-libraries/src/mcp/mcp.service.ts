@@ -38,6 +38,8 @@ Updating a model the user already has a link for (a fix, a new iteration of the 
 
 When the user wants to check a change before people who have the link see it, publish it with \`draft: true\`: it stays private and the link keeps showing the live version. Give the user its previewUrl, and publish it (publish_draft) only when they say so.
 
+Visitors can't download the .glb unless the owner turns downloads on for that model: call set_model_downloads only when the user asks for it (it makes their file downloadable by anyone with the link).
+
 Always give the user the share link (url) you get back. Covers (PNG/JPEG/WebP up to 5 MB) are optional and only used for link previews.`;
 
 const text = (value: unknown) => ({
@@ -164,7 +166,7 @@ export class McpService {
       'list_models',
       {
         title: 'List models',
-        description: `The account's models, most recently changed first (24 per page), with their share links, live version and how many versions and drafts each has.`,
+        description: `The account's models, most recently changed first (24 per page), with their share links, live version, how many versions and drafts each has, whether visitors can download it, and how many times its link was viewed and its file downloaded.`,
         inputSchema: z.object({ page: z.number().int().min(1).max(10_000).optional().describe('Page number, from 1') }),
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
@@ -180,6 +182,9 @@ export class McpService {
               versions: asset.versions,
               drafts: asset.drafts,
               fileSize: asset.fileSize,
+              allowDownload: asset.allowDownload,
+              views: asset.views,
+              downloads: asset.downloads,
               createdAt: asset.createdAt,
               changedAt: asset.activityAt,
             })),
@@ -203,6 +208,25 @@ export class McpService {
         run(async () => {
           const asset = await this._assetsService.rename(orgId, model, title);
           return { id: asset.id, title: asset.title, url: asset.url };
+        })
+    );
+
+    server.registerTool(
+      'set_model_downloads',
+      {
+        title: 'Turn downloads on or off',
+        description:
+          "Shows (allowed: true) or hides (false) a Download button on the model's share link, for the .glb of the version shown. Off by default. Only turn it on when the user asks: anyone with the link can then download their file.",
+        inputSchema: z.object({
+          model: modelRef,
+          allowed: z.boolean().describe('true: visitors can download the .glb; false: no Download button'),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      ({ model, allowed }) =>
+        run(async () => {
+          const asset = await this._assetsService.setAllowDownload(orgId, model, allowed);
+          return { id: asset.id, title: asset.title, url: asset.url, allowDownload: asset.allowDownload };
         })
     );
 

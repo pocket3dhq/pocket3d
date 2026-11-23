@@ -87,7 +87,7 @@ With your API key in the `Authorization` header (`<key>` or `Bearer <key>`):
 
 - `POST /api/public/v1/assets`: `multipart/form-data` fields `file`, `cover` (optional) and `title` (optional). Returns `{ id, url, path, coverPath, ... }`.
 - `POST /api/public/v1/assets/from-url`: JSON `{ url, coverUrl?, title? }`; the server downloads a public `.glb` (private and local addresses are refused).
-- `GET /api/public/v1/assets?page=`, `PUT /api/public/v1/assets/:id` (`{ title }`), `DELETE /api/public/v1/assets/:id`.
+- `GET /api/public/v1/assets?page=`, `PUT /api/public/v1/assets/:id` (`{ title?, liveVersion?, allowDownload? }`: `allowDownload: true` shows a Download button on the share link; off by default), `DELETE /api/public/v1/assets/:id`.
 - `GET /api/public/v1/me` tells whose key it is.
 
 The full reference is at `/api/docs` on any instance.
