@@ -35,7 +35,7 @@ pocket3d is made for models built by agents (Claude Code + Blender, Codex, Curso
 npx -y pocket3d login <api-key> && npx -y pocket3d skill   # once; the skill teaches Claude Code to publish
 ```
 
-`publish` prints **only the link** on stdout (or one JSON object with `--json`) and fails loudly on stderr, so an agent can run it and hand you the result. `npx pocket3d skill --print` prints the same instructions for other agents.
+`publish` prints **only the link** on stdout (or one JSON object with `--json`) and fails loudly on stderr, so an agent can run it and hand you the result. `npx pocket3d skill --print` prints the same instructions for other agents. The installed skill is kept up to date by the CLI itself, so agents learn new features (like publishing a new version to the same link) on their next run.
 
 **MCP server** at `https://pocket3d.co/mcp` (streamable HTTP; OAuth sign-in, or an API key as `Authorization: Bearer <key>`):
 

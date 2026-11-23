@@ -1,6 +1,6 @@
 {
   "name": "pocket3d",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Publish a 3D model (.glb) and get a link anyone can open. Made for AI agents like Claude Code.",
   "type": "module",
   "bin": {

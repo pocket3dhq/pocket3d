@@ -42,7 +42,9 @@ so scripts and AI agents can capture it. Errors go to stderr with a non-zero
 exit code. A version is 3 or v3.
 
 Limits: .glb up to 95 MB; cover PNG/JPEG/WebP up to 5 MB (used for link previews).
-Config: POCKET3D_URL and POCKET3D_API_KEY, or ${CONFIG_FILE} (written by login).`;
+Config: POCKET3D_URL and POCKET3D_API_KEY, or ${CONFIG_FILE} (written by login).
+The skill installed by \`pocket3d skill\` is brought up to date whenever the CLI
+runs (POCKET3D_NO_SKILL_UPDATE=1 turns that off).`;
 
 class CliError extends Error {}
 
@@ -491,6 +493,84 @@ async function remove(args: string[]) {
   process.stderr.write(`Deleted ${id} and all its versions; its link no longer works.\n`);
 }
 
+// The line the CLI puts under the front matter of every SKILL.md it writes.
+// While it is there, the CLI keeps that file up to date: agents follow
+// whatever the skill says, so an old copy would keep them on old habits
+// (like publishing a new model for every change). Deleting the line keeps a
+// hand-edited skill as it is
+const SKILL_MARKER =
+  '<!-- Written by the pocket3d CLI, which updates it when it runs. Delete this line to keep your own edits. -->';
+
+// The skill as the CLI installs it: the shared text plus the marker
+const managedSkill = (url: string) =>
+  skillMarkdown(url).replace(/^(---\n[\s\S]*?\n---\n)/, `$1${SKILL_MARKER}\n`);
+
+// "pocket3d (<server>) turns a .glb file into a link…": which server a skill
+// was written for, and how a skill from before the marker is recognised
+const SKILL_INTRO = /^pocket3d \((https?:\/\/[^\s)]+)\) turns a \.glb file/m;
+
+// Where `pocket3d skill` installs: the user's Claude Code skills, and a
+// project's own (.claude/skills in the working directory)
+const skillFiles = () => {
+  const home = process.env.HOME || homedir();
+  return [
+    ...new Set(
+      [join(home, '.claude', 'skills', 'pocket3d'), join(process.cwd(), '.claude', 'skills', 'pocket3d')].map((dir) =>
+        resolve(dir, 'SKILL.md')
+      )
+    ),
+  ];
+};
+
+// Rewrites an installed pocket3d skill that is older than this CLI, for the
+// server it was written for. Agents run the latest CLI through npx, so their
+// skill catches up on their next command. Skills edited by hand (marker
+// removed) and other skills are left alone; a skill from before the marker
+// is kept next to it as SKILL.md.bak. Never in the way of the command:
+// any failure here is ignored
+async function refreshSkills() {
+  if (process.env.POCKET3D_NO_SKILL_UPDATE) {
+    return;
+  }
+  for (const file of skillFiles()) {
+    try {
+      let current: string;
+      try {
+        current = await readFile(file, 'utf8');
+      } catch {
+        continue; // not installed there
+      }
+      const server = current.match(SKILL_INTRO)?.[1];
+      if (!server || !/^---\nname: pocket3d\n/.test(current)) {
+        continue; // not a pocket3d skill
+      }
+      const url = normalizeUrl(server);
+      const next = managedSkill(url);
+      if (next === current) {
+        continue; // up to date
+      }
+      // Without the marker, only what a CLI from before it wrote is updated:
+      // 0.2.0 and older (the only ones saying a publish always makes a new
+      // link; kept aside, in case it was edited), or 0.2.1's text as it was
+      // written. Anything else was edited by hand, or had the marker taken
+      // out on purpose: left as it is
+      const old = current.includes('Every publish creates a new link.');
+      if (!current.includes(SKILL_MARKER) && !old && current !== skillMarkdown(url)) {
+        continue;
+      }
+      if (old) {
+        await writeFile(`${file}.bak`, current);
+      }
+      await writeFile(file, next);
+      process.stderr.write(
+        `Updated the pocket3d skill to this version's instructions: ${file}${old ? ` (the old one: ${file}.bak)` : ''}\n`
+      );
+    } catch {
+      // unreadable, read-only...: the skill stays as it is
+    }
+  }
+}
+
 // Writes SKILL.md for Claude Code (~/.claude/skills/pocket3d) or prints it.
 // Uses the logged-in instance's URL, so self-hosters get their own
 async function skill(args: string[]) {
@@ -500,21 +580,41 @@ async function skill(args: string[]) {
   });
   const fileConfig = await readFileConfig();
   const url = normalizeUrl(process.env.POCKET3D_URL || fileConfig.url || CLOUD_URL);
-  const markdown = skillMarkdown(url);
   if (values.print) {
-    process.stdout.write(markdown);
+    process.stdout.write(skillMarkdown(url));
     return;
   }
   const home = process.env.HOME || homedir();
   const dir = resolve(values.dir || join(home, '.claude', 'skills', 'pocket3d'));
   await mkdir(dir, { recursive: true });
   const file = join(dir, 'SKILL.md');
-  await writeFile(file, markdown);
-  process.stderr.write(`Installed the pocket3d skill: ${file}\nClaude Code picks it up in new sessions. Other agents: pocket3d skill --print\n`);
+  await writeFile(file, managedSkill(url));
+  process.stderr.write(
+    `Installed the pocket3d skill: ${file}\nClaude Code picks it up in new sessions, and this CLI keeps it up to date. Other agents: pocket3d skill --print\n`
+  );
 }
+
+// Commands after which an installed skill is brought up to date (not skill,
+// which writes it, nor help and --version)
+const REFRESHES_SKILL = new Set([
+  'publish',
+  'list',
+  'ls',
+  'rename',
+  'versions',
+  'live',
+  'publish-draft',
+  'delete',
+  'rm',
+  'login',
+  'whoami',
+]);
 
 async function main(argv: string[]) {
   const [command, ...rest] = argv;
+  if (REFRESHES_SKILL.has(command)) {
+    await refreshSkills();
+  }
   switch (command) {
     case 'publish':
       return publish(rest);

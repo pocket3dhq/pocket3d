@@ -21,6 +21,8 @@ pocket3d skill                           # install the agent skill for Claude Co
 pocket3d skill --print                   # the same instructions, for any other agent
 ```
 
+The installed skill stays current: whenever the CLI runs (and agents run the latest through `npx`), it rewrites an older pocket3d skill with this version's instructions. Delete the marker line at its top to keep your own edits, or set `POCKET3D_NO_SKILL_UPDATE=1`.
+
 ## Commands
 
 ```

@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { createServer, IncomingMessage, Server } from 'http';
 import { AddressInfo } from 'net';
 import { tmpdir } from 'os';
@@ -7,6 +7,8 @@ import { join } from 'path';
 
 // The built CLI (pnpm test builds it first) against a fake pocket3d server
 const CLI = join(__dirname, '..', 'dist', 'index.js');
+const SKILL_MARKER =
+  '<!-- Written by the pocket3d CLI, which updates it when it runs. Delete this line to keep your own edits. -->';
 const GOOD_KEY = 'p3d_' + 'a'.repeat(40);
 
 interface Run {
@@ -128,8 +130,10 @@ describe('pocket3d CLI', () => {
 
   const run = (args: string[], env: Record<string, string> = {}) =>
     new Promise<Run>((resolve) => {
+      // HOME is a temp folder too: the CLI updates installed skills, and must
+      // never touch the real ~/.claude of whoever runs the tests
       const child = spawn(process.execPath, [CLI, ...args], {
-        env: { PATH: process.env.PATH!, XDG_CONFIG_HOME: configHome, ...env },
+        env: { PATH: process.env.PATH!, XDG_CONFIG_HOME: configHome, HOME: work, ...env },
         cwd: work,
       });
       let stdout = '';
@@ -341,10 +345,87 @@ describe('pocket3d CLI', () => {
     expect(markdown).not.toContain(GOOD_KEY);
 
     const printed = await run(['skill', '--print'], { HOME: work });
-    expect(printed.stdout).toBe(markdown);
+    // the installed copy carries the line that lets the CLI keep it up to date
+    expect(markdown).toContain(SKILL_MARKER);
+    expect(markdown.replace(`${SKILL_MARKER}\n`, '')).toBe(printed.stdout);
     // default location: ~/.claude/skills/pocket3d
     await run(['skill'], { HOME: work });
     expect(existsSync(join(work, '.claude', 'skills', 'pocket3d', 'SKILL.md'))).toBe(true);
+  });
+
+  describe('keeping an installed skill up to date', () => {
+    // what `pocket3d skill` wrote with CLI 0.2.0, before the marker existed
+    const skill020 = (server: string) =>
+      readFileSync(join(__dirname, 'fixtures', 'skill-0.2.0.md'), 'utf8').split('https://pocket3d.co').join(server);
+    const installAt = (home: string, text: string) => {
+      const dir = join(home, '.claude', 'skills', 'pocket3d');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'SKILL.md'), text);
+      return join(dir, 'SKILL.md');
+    };
+
+    it('updates an old skill for the server it was written for, keeping the old one aside', async () => {
+      const old = skill020('https://p3d.example.com');
+      const file = installAt(work, old);
+      // whoami fails (not logged in): the skill is updated anyway, first
+      const result = await run(['whoami']);
+      expect(result.stderr).toContain(`Updated the pocket3d skill to this version's instructions: ${file}`);
+      const updated = readFileSync(file, 'utf8');
+      expect(updated).toContain(SKILL_MARKER);
+      expect(updated).toContain('--to <id-or-link>');
+      expect(updated).not.toContain('Every publish creates a new link');
+      expect(updated).toContain('npx -y pocket3d login https://p3d.example.com <api-key>');
+      expect(readFileSync(`${file}.bak`, 'utf8')).toBe(old);
+
+      // up to date: nothing more to say or write
+      const again = await run(['whoami']);
+      expect(again.stderr).not.toContain('Updated the pocket3d skill');
+    });
+
+    it("adds the marker to a skill written by 0.2.1 (no marker yet), with nothing to keep aside", async () => {
+      await run(['skill']);
+      const file = join(work, '.claude', 'skills', 'pocket3d', 'SKILL.md');
+      const written021 = readFileSync(file, 'utf8').replace(`${SKILL_MARKER}\n`, '');
+      writeFileSync(file, written021);
+      const result = await run(['whoami']);
+      expect(result.stderr).toContain('Updated the pocket3d skill');
+      expect(readFileSync(file, 'utf8')).toBe(written021.replace(/^(---\n[\s\S]*?\n---\n)/, `$1${SKILL_MARKER}\n`));
+      expect(existsSync(`${file}.bak`)).toBe(false);
+    });
+
+    it("updates a project's skill too (.claude/skills in the working directory)", async () => {
+      const elsewhere = mkdtempSync(join(tmpdir(), 'p3d-cli-home-'));
+      const file = installAt(work, skill020('https://pocket3d.co'));
+      const result = await run(['list'], { HOME: elsewhere, ...loggedIn, POCKET3D_URL: url });
+      expect(result.code).toBe(0);
+      expect(readFileSync(file, 'utf8')).toContain(SKILL_MARKER);
+    });
+
+    it('leaves alone a skill edited by hand, a skill that is not pocket3d\'s, and everything when told to', async () => {
+      // the marker line removed: the owner keeps their edits
+      const installed = await run(['skill']);
+      expect(installed.code).toBe(0);
+      const file = join(work, '.claude', 'skills', 'pocket3d', 'SKILL.md');
+      const edited = readFileSync(file, 'utf8').replace(`${SKILL_MARKER}\n`, '') + '\nMy own rule.\n';
+      writeFileSync(file, edited);
+      await run(['whoami']);
+      expect(readFileSync(file, 'utf8')).toBe(edited);
+
+      const other = '---\nname: pocket3d\ndescription: mine\n---\n\nSomething else entirely.\n';
+      writeFileSync(file, other);
+      await run(['whoami']);
+      expect(readFileSync(file, 'utf8')).toBe(other);
+
+      const old = skill020('https://pocket3d.co');
+      writeFileSync(file, old);
+      const off = await run(['whoami'], { POCKET3D_NO_SKILL_UPDATE: '1' });
+      expect(off.stderr).not.toContain('Updated the pocket3d skill');
+      expect(readFileSync(file, 'utf8')).toBe(old);
+      // --help and --version never touch it
+      await run(['--help']);
+      await run(['--version']);
+      expect(readFileSync(file, 'utf8')).toBe(old);
+    });
   });
 
   it('lists whoami and the version commands in the help', async () => {
