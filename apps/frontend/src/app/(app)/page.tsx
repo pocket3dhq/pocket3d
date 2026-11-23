@@ -15,6 +15,7 @@ import {
   BUTTON_VARIANTS,
 } from '@pocket3d/frontend/components/ui/button';
 import { Logo } from '@pocket3d/frontend/components/ui/logo';
+import { Analytics } from '@pocket3d/frontend/components/analytics';
 
 export const dynamic = 'force-dynamic';
 
@@ -205,6 +206,7 @@ export default async function HomePage() {
         <FaqSection />
       </main>
       <SiteFooter repoUrl={repoUrl} demoUrl={demoUrl} />
+      <Analytics />
     </>
   );
 }

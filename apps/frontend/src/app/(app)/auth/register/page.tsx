@@ -4,6 +4,7 @@ import { AuthShell } from '@pocket3d/frontend/components/auth/auth.shell';
 import { RegisterForm } from '@pocket3d/frontend/components/auth/register.form';
 import { Notice } from '@pocket3d/frontend/components/ui/notice';
 import { getAuthOptions } from '@pocket3d/frontend/lib/session';
+import { Analytics } from '@pocket3d/frontend/components/analytics';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Sign up · pocket3d' };
@@ -32,6 +33,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
   return (
     <AuthShell title="Create your account" subtitle="Then connect your AI agent and publish from it or from your terminal." footer={footer}>
       <RegisterForm next={nextParam} />
+      <Analytics />
     </AuthShell>
   );
 }

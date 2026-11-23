@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { AuthShell } from '@pocket3d/frontend/components/auth/auth.shell';
 import { LoginForm } from '@pocket3d/frontend/components/auth/login.form';
 import { getAuthOptions } from '@pocket3d/frontend/lib/session';
+import { Analytics } from '@pocket3d/frontend/components/analytics';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Log in · pocket3d' };
@@ -29,6 +30,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       }
     >
       <LoginForm next={nextParam} emailEnabled={options.emailEnabled} />
+      <Analytics />
     </AuthShell>
   );
 }

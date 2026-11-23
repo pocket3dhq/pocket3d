@@ -47,6 +47,7 @@ services:
       # === Optional
       # REPO_URL: ''   # source code link on the home page and viewer (default: the public repo)
       # DEMO_URL: ''   # a MAIN_URL/m/<id> link shown on the home page
+      # GTM_ID: ''     # Google Tag Manager container (GTM-...); unset: no analytics
     volumes:
       - pocket3d-uploads:/uploads
     ports:
