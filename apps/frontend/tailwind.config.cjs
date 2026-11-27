@@ -15,6 +15,16 @@ module.exports = {
         accentText: 'rgb(var(--p3d-accent-text) / <alpha-value>)',
         danger: 'rgb(var(--p3d-danger) / <alpha-value>)',
         success: 'rgb(var(--p3d-success) / <alpha-value>)',
+        axisX: 'rgb(var(--p3d-axis-x) / <alpha-value>)',
+        axisY: 'rgb(var(--p3d-axis-y) / <alpha-value>)',
+        axisZ: 'rgb(var(--p3d-axis-z) / <alpha-value>)',
+        wire: 'rgb(var(--p3d-wire) / <alpha-value>)',
+        vertex: 'rgb(var(--p3d-vertex) / <alpha-value>)',
+        normal: 'rgb(var(--p3d-normal) / <alpha-value>)',
+        bbox: 'rgb(var(--p3d-bbox) / <alpha-value>)',
+        clay: 'rgb(var(--p3d-clay) / <alpha-value>)',
+        faceFront: 'rgb(var(--p3d-face-front) / <alpha-value>)',
+        faceBack: 'rgb(var(--p3d-face-back) / <alpha-value>)',
       },
       // Inter for text, IBM Plex Mono for buttons, labels, card titles and
       // code (both loaded in app/layout.tsx with next/font)

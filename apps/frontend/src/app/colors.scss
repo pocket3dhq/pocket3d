@@ -13,6 +13,20 @@
   --p3d-danger: 237 107 95;
   --p3d-success: 46 204 113;
 
+  // the X / Y / Z axes in the viewer's Scene panel (the usual red / green / blue)
+  --p3d-axis-x: 240 98 98;
+  --p3d-axis-y: 116 204 106;
+  --p3d-axis-z: 92 148 255;
+
+  // the Mesh tab's overlays on the model (and their swatches in the panel)
+  --p3d-wire: 230 230 230;
+  --p3d-vertex: 255 150 60;
+  --p3d-normal: 70 215 230;
+  --p3d-bbox: 250 204 21;
+  --p3d-clay: 128 128 128;
+  --p3d-face-front: 70 120 230;
+  --p3d-face-back: 220 60 60;
+
   // the stage behind the model
   --p3d-stage-top: 24 24 24;
   --p3d-stage-bottom: 6 6 6;

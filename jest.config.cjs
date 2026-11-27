@@ -30,6 +30,14 @@ module.exports = {
         '<rootDir>/libraries/**/*.spec.ts',
       ],
       testPathIgnorePatterns: ['/node_modules/', '\\.e2e-spec\\.ts$', '/dist/'],
+      // three is ESM-only (its CommonJS entry needs Node's require(esm)):
+      // the viewer's three-side specs get it compiled to CommonJS
+      moduleNameMapper: { ...moduleNameMapper, '^three$': '<rootDir>/node_modules/three/build/three.module.js' },
+      transform: {
+        ...transform,
+        '/three/build/.+\\.js$': ['ts-jest', { tsconfig: { allowJs: true, module: 'commonjs' }, diagnostics: false }],
+      },
+      transformIgnorePatterns: ['/node_modules/(?!(\\.pnpm/three@[^/]+/node_modules/)?three/)'],
     },
     {
       ...common,

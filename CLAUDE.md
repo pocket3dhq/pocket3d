@@ -23,7 +23,7 @@ This project is a monorepo with a root-only package.json of dependencies, made w
 - Keep `.env.example` and `docker-compose.yaml` updated when adding an env var (and tell the maintainer, so pocket3d.co's private deploy config gets it too).
 - Frontend: before writing Next.js code, read `apps/frontend/AGENTS.md` (Next 16 differs from older versions; docs in `node_modules/next/dist/docs/`). Colours come from the CSS variables in `apps/frontend/src/app/colors.scss` through Tailwind names (`bg-bg`, `text-textMuted`...), never hard-coded hex. Write native components, don't install UI kits.
 - If the frontend ever fetches client-side: SWR, one hook per request, following react-hooks/rules-of-hooks.
-- `apps/frontend/src/components/viewer/model.viewer.tsx` must keep `NoToneMapping` + sRGB output: unlit / baked-colour models (cel looks) must render exactly as authored.
+- The viewer (`apps/frontend/src/components/viewer/stage.ts`, used by `model.viewer.tsx`) must keep `NoToneMapping` + sRGB output **as the default**: unlit / baked-colour models (cel looks) must render exactly as authored unless the visitor picks a tone mapper in the Adjust panel. Exposure (EV) scales the environment and lights only, never `toneMappingExposure`.
 - New features start in `ROADMAP.md` (gitignored, local only: never commit it). The MVP is: publish → link → viewer → preview → self-host.
 - When you finish, run `scripts/smoke.sh <url> [api-key]` against what you changed (dev: `scripts/smoke.sh http://localhost:4200`, which signs up and deletes a throwaway account; signup is limited to 5 per hour per IP).
 

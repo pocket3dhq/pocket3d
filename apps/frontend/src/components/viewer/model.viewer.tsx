@@ -1,161 +1,41 @@
 'use client';
 
-import { FC, useEffect, useRef, useState } from 'react';
+import { FC, RefObject, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { isTyping } from './versions';
-
-// Draco-compressed glbs (common from AI generators) need the decoder; Google
-// hosts the versioned builds three's DRACOLoader expects
-const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/';
-
-// Frees everything the GPU holds for the loaded model
-const disposeObject = (root: THREE.Object3D) => {
-  root.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    mesh.geometry?.dispose();
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const material of materials) {
-      if (!material) continue;
-      for (const value of Object.values(material)) {
-        if (value instanceof THREE.Texture) value.dispose();
-      }
-      material.dispose();
-    }
-  });
-};
-
-const Y_AXIS = new THREE.Vector3(0, 1, 0);
-
-// Up to ~40k world-space vertex positions, enough to find the model's shape
-const samplePoints = (root: THREE.Object3D) => {
-  root.updateMatrixWorld(true);
-  const meshes: THREE.Mesh[] = [];
-  root.traverse((node) => {
-    if ((node as THREE.Mesh).isMesh) meshes.push(node as THREE.Mesh);
-  });
-  const total = meshes.reduce((sum, m) => sum + (m.geometry.attributes.position?.count || 0), 0);
-  const stride = Math.max(1, Math.ceil(total / 40000));
-  const points: THREE.Vector3[] = [];
-  for (const mesh of meshes) {
-    const position = mesh.geometry.attributes.position;
-    if (!position) continue;
-    for (let i = 0; i < position.count; i += stride) {
-      points.push(new THREE.Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld));
-    }
-  }
-  return points;
-};
-
-// The model's long horizontal direction (principal axis of its footprint),
-// so a road laid out diagonally is framed along its real length
-const longAxis = (points: THREE.Vector3[]) => {
-  let mx = 0;
-  let mz = 0;
-  for (const p of points) {
-    mx += p.x;
-    mz += p.z;
-  }
-  mx /= points.length;
-  mz /= points.length;
-  let cxx = 0;
-  let czz = 0;
-  let cxz = 0;
-  for (const p of points) {
-    const dx = p.x - mx;
-    const dz = p.z - mz;
-    cxx += dx * dx;
-    czz += dz * dz;
-    cxz += dx * dz;
-  }
-  const angle = 0.5 * Math.atan2(2 * cxz, cxx - czz);
-  return new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
-};
-
-// Puts the camera three-quarters from above, at the distance where the
-// model's box (oriented along its long axis) just fits the view. Landscape
-// screens look across the long side; portrait screens (phones) look along it
-// from higher up, so the long side runs up the screen
-const frameModel = (
-  root: THREE.Object3D,
-  camera: THREE.PerspectiveCamera,
-  controls: OrbitControls
-) => {
-  const points = samplePoints(root);
-  if (!points.length) return;
-
-  const long = longAxis(points);
-  const short = new THREE.Vector3().crossVectors(Y_AXIS, long);
-  const axes = [long, Y_AXIS, short];
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (const p of points) {
-    axes.forEach((axis, k) => {
-      const d = p.dot(axis);
-      if (d < min[k]) min[k] = d;
-      if (d > max[k]) max[k] = d;
-    });
-  }
-  const center = new THREE.Vector3();
-  const half: number[] = [];
-  axes.forEach((axis, k) => {
-    center.addScaledVector(axis, (min[k] + max[k]) / 2);
-    half.push((max[k] - min[k]) / 2);
-  });
-  const radius = Math.hypot(half[0], half[1], half[2]) || 1;
-
-  const portrait = camera.aspect < 1;
-  const side = (portrait ? long : short)
-    .clone()
-    .applyAxisAngle(Y_AXIS, THREE.MathUtils.degToRad(25));
-  const pitch = THREE.MathUtils.degToRad(portrait ? 50 : 28);
-  const toCamera = side.multiplyScalar(Math.cos(pitch)).addScaledVector(Y_AXIS, Math.sin(pitch)).normalize();
-  const right = new THREE.Vector3().crossVectors(Y_AXIS, toCamera).normalize();
-  const up = new THREE.Vector3().crossVectors(toCamera, right);
-
-  const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
-  const tanH = tanV * camera.aspect;
-  const margin = 1.1;
-  let distance = 0;
-  for (let i = 0; i < 8; i++) {
-    const corner = new THREE.Vector3()
-      .addScaledVector(long, i & 1 ? half[0] : -half[0])
-      .addScaledVector(Y_AXIS, i & 2 ? half[1] : -half[1])
-      .addScaledVector(short, i & 4 ? half[2] : -half[2]);
-    // the corner's depth in front of the camera is distance - (corner · toCamera)
-    const needed =
-      Math.max(Math.abs(corner.dot(right)) / tanH, Math.abs(corner.dot(up)) / tanV) * margin +
-      corner.dot(toCamera);
-    distance = Math.max(distance, needed);
-  }
-
-  camera.position.copy(center).addScaledVector(toCamera, distance);
-  camera.near = radius / 500;
-  camera.far = (distance + radius) * 8;
-  camera.updateProjectionMatrix();
-
-  controls.target.copy(center);
-  controls.minDistance = radius * 0.02;
-  controls.maxDistance = distance * 6;
-  controls.update();
-};
-
-// Everything that lives as long as the viewer, whatever model it shows
-interface Stage {
-  renderer: THREE.WebGLRenderer;
-  camera: THREE.PerspectiveCamera;
-  controls: OrbitControls;
-  scene: THREE.Scene;
-  loader: GLTFLoader;
-  model: THREE.Object3D | null;
-  // bounding radius of the model shown, to tell whether the next one is of
-  // a comparable size
-  radius: number | null;
-}
+import { DEFAULT_TRANSFORM, isDefault, SceneBounds, SceneTransform } from './scene.settings';
+import { CameraView, DEFAULT_LOOK, LookStatus, ViewLook } from './look.settings';
+import { setProjection, viewModel } from './camera';
+import { DEFAULT_VIEW, Isolate, MaterialEdits, MaterialsReport, SlotId, ViewMode } from './material.settings';
+import { disposeMaterialIndex, indexMaterials, materialKeyFor, refreshMaterials, textureForSlot } from './materials';
+import { DEFAULT_MESH_VIEW, isRawSurface, MeshReport, MeshView } from './mesh.settings';
+import {
+  applyInspection,
+  applySurface,
+  disposeMeshIndex,
+  ensureDetails,
+  indexMeshes,
+  InspectLimits,
+  InspectState,
+  meshReport,
+  objectFor,
+  pickAt,
+  refreshBoxes,
+} from './mesh.inspect';
+import { readTexture, TexturePicture } from './texture.preview';
+import {
+  applyLook,
+  createStage,
+  disposeObject,
+  disposeStage,
+  fitToModel,
+  loadEnvironment,
+  prepareModel,
+  renderStage,
+  resizeStage,
+  showEnvironment,
+  Stage,
+} from './stage';
 
 const boundingRadius = (root: THREE.Object3D) =>
   new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere()).radius || 1;
@@ -165,7 +45,131 @@ const boundingRadius = (root: THREE.Object3D) =>
 // the camera reframes (the new one would be lost or fill the screen)
 const KEEP_CAMERA_RATIO = 3;
 
-export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) => {
+// Wraps a loaded scene so the Scene settings turn and scale it about the
+// middle of its box (not the file's origin, which can be far away): the
+// holder sits at that middle, the scene inside is shifted back by it, so
+// with no settings everything is exactly where the file put it
+const makeHolder = (scene: THREE.Object3D) => {
+  const pivot = new THREE.Box3().setFromObject(scene).getCenter(new THREE.Vector3());
+  if (!Number.isFinite(pivot.x + pivot.y + pivot.z)) pivot.set(0, 0, 0);
+  const offset = new THREE.Group();
+  offset.position.copy(pivot).negate();
+  offset.add(scene);
+  const holder = new THREE.Group();
+  holder.userData.pivot = pivot;
+  holder.add(offset);
+  return holder;
+};
+
+// Applies the Scene panel's settings to the model's holder group
+const applyTransform = (holder: THREE.Object3D, transform: SceneTransform) => {
+  const pivot = holder.userData.pivot as THREE.Vector3;
+  holder.position.fromArray(transform.position).add(pivot);
+  holder.rotation.set(
+    THREE.MathUtils.degToRad(transform.rotation[0]),
+    THREE.MathUtils.degToRad(transform.rotation[1]),
+    THREE.MathUtils.degToRad(transform.rotation[2]),
+    'XYZ'
+  );
+  holder.scale.setScalar(transform.scale);
+  holder.updateMatrixWorld(true);
+};
+
+const measure = (holder: THREE.Object3D, src: string): SceneBounds => {
+  const box = new THREE.Box3().setFromObject(holder);
+  return { src, min: box.min.toArray(), max: box.max.toArray() };
+};
+
+// A request to move the camera: each new `n` puts it on the model (or on
+// one of its parts, `object`, a Mesh tab id) from `view` (fit is the
+// opening three-quarter framing, as R does)
+export interface FrameRequest {
+  view: CameraView;
+  n: number;
+  object?: string;
+}
+
+const NO_FRAME: FrameRequest = { view: 'fit', n: 0 };
+const NO_EDITS: MaterialEdits = {};
+const NOTHING_HIDDEN: string[] = [];
+
+// A click on the model, while the Mesh tab picks: the part under it (null:
+// none) and its material in the Materials tab
+export interface MeshPick {
+  id: string | null;
+  material: string | null;
+}
+
+// A press that moves less than this (in pixels) is a click, not an orbit
+const CLICK_SLOP = 4;
+
+// What the Materials tab asks of the viewer: a picture of the texture in a
+// material's slot (of the file `src`), or null when there is none
+export type TextureReader = (
+  src: string,
+  material: string,
+  slot: SlotId,
+  isolate: Isolate,
+  maxSize: number
+) => Promise<TexturePicture | null>;
+
+export interface ViewerHandle {
+  textureImage: TextureReader;
+}
+
+// `transform` (optional) is the visitor's Scene settings for this file;
+// `onBounds` hears the model's box whenever a model or its settings change.
+// `look` is the visitor's camera and lighting settings, `onLookStatus` hears
+// about environment downloads. Each new `frame` moves the camera (after
+// jumps like "centre" or "rest on the floor", or a camera view).
+// `materialEdits` (for this file) and `view` are the Materials tab's;
+// `onMaterials` hears what the file's materials are once it loads, and
+// `inspectorRef` lets the tab ask for pictures of textures. Without these
+// props (the dashboard) the viewer looks as it always has.
+// The Mesh tab's: `meshView` (how surfaces, wireframe and overlays show),
+// `hiddenObjects` and `selectedObject` (ids for this file), `inspectMeshes`
+// (the tab is open: its numbers are worked out and clicks pick parts),
+// `onMeshes` hears the file's objects and numbers, `onPick` the clicks,
+// `onMeshLimits` when there are too many vertices for every dot or normal
+export const ModelViewer: FC<{
+  src: string;
+  title: string;
+  transform?: SceneTransform;
+  onBounds?: (bounds: SceneBounds) => void;
+  frame?: FrameRequest;
+  look?: ViewLook;
+  onLookStatus?: (status: LookStatus) => void;
+  materialEdits?: MaterialEdits;
+  view?: ViewMode;
+  onMaterials?: (report: MaterialsReport) => void;
+  inspectorRef?: RefObject<ViewerHandle | null>;
+  meshView?: MeshView;
+  hiddenObjects?: string[];
+  selectedObject?: string | null;
+  inspectMeshes?: boolean;
+  onMeshes?: (report: MeshReport) => void;
+  onPick?: (pick: MeshPick) => void;
+  onMeshLimits?: (limits: InspectLimits) => void;
+}> = ({
+  src,
+  title,
+  transform = DEFAULT_TRANSFORM,
+  onBounds,
+  frame = NO_FRAME,
+  look = DEFAULT_LOOK,
+  onLookStatus,
+  materialEdits = NO_EDITS,
+  view = DEFAULT_VIEW,
+  onMaterials,
+  inspectorRef,
+  meshView = DEFAULT_MESH_VIEW,
+  hiddenObjects = NOTHING_HIDDEN,
+  selectedObject = null,
+  inspectMeshes = false,
+  onMeshes,
+  onPick,
+  onMeshLimits,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Stage | null>(null);
   // the file on screen, the one loading, the one that failed: set from the
@@ -173,94 +177,109 @@ export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) 
   const [shownSrc, setShownSrc] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ src: string; ratio: number | null } | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  // the latest settings and listeners, for the loader's callbacks
+  const transformRef = useRef(transform);
+  const onBoundsRef = useRef(onBounds);
+  const onLookStatusRef = useRef(onLookStatus);
+  const editsRef = useRef(materialEdits);
+  const viewRef = useRef(view);
+  const onMaterialsRef = useRef(onMaterials);
+  const inspectRef = useRef<InspectState>({ view: meshView, hidden: hiddenObjects, selected: selectedObject });
+  const inspectMeshesRef = useRef(inspectMeshes);
+  const onMeshesRef = useRef(onMeshes);
+  const onPickRef = useRef(onPick);
+  const onMeshLimitsRef = useRef(onMeshLimits);
+  // the file the stage's material index describes
+  const materialsSrcRef = useRef<string | null>(null);
+  const framedRef = useRef(frame.n);
+  const statusRef = useRef<LookStatus>({ loading: null, failed: null, maxShadowQuality: 1024 });
+  useEffect(() => {
+    transformRef.current = transform;
+    onBoundsRef.current = onBounds;
+    onLookStatusRef.current = onLookStatus;
+    editsRef.current = materialEdits;
+    viewRef.current = view;
+    onMaterialsRef.current = onMaterials;
+    inspectRef.current = { view: meshView, hidden: hiddenObjects, selected: selectedObject };
+    inspectMeshesRef.current = inspectMeshes;
+    onMeshesRef.current = onMeshes;
+    onPickRef.current = onPick;
+    onMeshLimitsRef.current = onMeshLimits;
+  });
 
-  // The renderer, camera and controls: created once, kept across models
+  const report = (patch: Partial<LookStatus>) => {
+    statusRef.current = { ...statusRef.current, ...patch };
+    onLookStatusRef.current?.(statusRef.current);
+  };
+
+  // The renderer, cameras and controls: created once, kept across models
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(container.clientWidth, container.clientHeight, false);
-    // No tone mapping: baked / unlit colours (KHR_materials_unlit, cel looks)
-    // must come out exactly as authored
-    renderer.toneMapping = THREE.NoToneMapping;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.domElement.className = 'block h-full w-full touch-none outline-none';
-    container.appendChild(renderer.domElement);
+    const stage = createStage(container);
+    stageRef.current = stage;
+    const { renderer, controls } = stage;
 
-    const scene = new THREE.Scene();
-    // Lit (PBR) models get a neutral studio environment plus one key light;
-    // unlit materials ignore both
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environment = environment;
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    keyLight.position.set(1, 2, 1.5);
-    scene.add(keyLight);
-
-    const camera = new THREE.PerspectiveCamera(
-      40,
-      container.clientWidth / Math.max(container.clientHeight, 1),
-      0.01,
-      1000
-    );
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.6;
     // the first touch or drag hands control to the visitor for good
     const stopAutoRotate = () => {
       controls.autoRotate = false;
     };
     controls.addEventListener('start', stopAutoRotate);
 
-    const resize = () => {
-      const width = container.clientWidth;
-      const height = Math.max(container.clientHeight, 1);
-      renderer.setSize(width, height, false);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    };
-    const observer = new ResizeObserver(resize);
+    const observer = new ResizeObserver(() =>
+      resizeStage(stage, container.clientWidth, container.clientHeight)
+    );
     observer.observe(container);
 
-    renderer.setAnimationLoop(() => {
-      controls.update();
-      renderer.render(scene, camera);
-    });
-
-    const draco = new DRACOLoader().setDecoderPath(DRACO_DECODER_PATH);
-    const loader = new GLTFLoader().setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder);
-    const stage: Stage = { renderer, camera, controls, scene, loader, model: null, radius: null };
-    stageRef.current = stage;
+    renderer.setAnimationLoop(() => renderStage(stage));
 
     // R puts the camera back where it started for this model
     const onKey = (event: KeyboardEvent) => {
       if ((event.key === 'r' || event.key === 'R') && !event.metaKey && !event.ctrlKey && !event.altKey && !isTyping(event.target) && stage.model) {
-        frameModel(stage.model, camera, controls);
+        viewModel(stage.model, stage, 'fit');
       }
     };
     window.addEventListener('keydown', onKey);
 
+    // While the Mesh tab is open, a click (not a drag) picks the part under it
+    const canvas = renderer.domElement;
+    let press: { x: number; y: number; id: number } | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      press = event.isPrimary && event.button === 0 ? { x: event.clientX, y: event.clientY, id: event.pointerId } : null;
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const start = press;
+      press = null;
+      if (!start || start.id !== event.pointerId || !inspectMeshesRef.current || !stage.meshes) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > CLICK_SLOP) return;
+      const rect = canvas.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const hit = pickAt(stage.meshes, stage.active, ndc);
+      const material = hit && stage.materials ? materialKeyFor(stage.materials, hit.object, hit.materialIndex) : null;
+      onPickRef.current?.({ id: hit?.id ?? null, material });
+    };
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointerup', onPointerUp);
+
+    statusRef.current = {
+      ...statusRef.current,
+      maxShadowQuality: Math.min(4096, renderer.capabilities.maxTextureSize),
+    };
+    onLookStatusRef.current?.(statusRef.current);
+
     return () => {
       stageRef.current = null;
       window.removeEventListener('keydown', onKey);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointerup', onPointerUp);
       observer.disconnect();
       renderer.setAnimationLoop(null);
       controls.removeEventListener('start', stopAutoRotate);
-      controls.dispose();
-      if (stage.model) {
-        scene.remove(stage.model);
-        disposeObject(stage.model);
-      }
-      environment.dispose();
-      pmrem.dispose();
-      draco.dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
+      disposeStage(stage);
     };
   }, []);
 
@@ -283,13 +302,31 @@ export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) 
           disposeObject(gltf.scene);
           return;
         }
-        const next = gltf.scene;
+        const next = makeHolder(gltf.scene);
+        prepareModel(stage, next);
+        // the camera decision compares files as authored, before settings
         const radius = boundingRadius(next);
+        applyTransform(next, transformRef.current);
         const previous = stage.model;
+        // the Mesh tab's looks sit over the materials: they come off first
+        if (stage.meshes) disposeMeshIndex(stage.meshes);
+        if (stage.materials) disposeMaterialIndex(stage.materials);
         if (previous) {
           stage.scene.remove(previous);
           disposeObject(previous);
         }
+        const materials = indexMaterials(gltf);
+        // an unlit material's PBR textures arrive later: the edits apply again
+        const meshes = indexMeshes(gltf.scene);
+        materials.onLoaded = () => {
+          if (stage.materials !== materials) return;
+          refreshMaterials(materials, editsRef.current, viewRef.current);
+          if (stage.meshes === meshes) applySurface(meshes, inspectRef.current.view);
+        };
+        stage.materials = materials;
+        stage.meshes = meshes;
+        materialsSrcRef.current = src;
+        refreshMaterials(materials, editsRef.current, viewRef.current);
         stage.scene.add(next);
         const reframe =
           stage.radius === null ||
@@ -298,8 +335,15 @@ export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) 
         stage.model = next;
         stage.radius = radius;
         if (reframe) {
-          frameModel(next, stage.camera, stage.controls);
+          viewModel(next, stage, 'fit');
         }
+        fitToModel(stage);
+        if (!isDefault(transformRef.current)) stage.controls.autoRotate = false;
+        onMeshLimitsRef.current?.(applyInspection(meshes, inspectRef.current, next, stage.inspection, radius));
+        stage.hiddenKey = inspectRef.current.hidden.join(',');
+        onBoundsRef.current?.(measure(next, src));
+        onMaterialsRef.current?.({ src, ...materials.report });
+        onMeshesRef.current?.(meshReport(meshes, src));
         setFailedSrc(null);
         setShownSrc(src);
       },
@@ -318,6 +362,140 @@ export const ModelViewer: FC<{ src: string; title: string }> = ({ src, title }) 
       cancelled = true;
     };
   }, [src]);
+
+  // The Scene settings, as the visitor changes them. Only once the model on
+  // screen is this file: the previous one keeps its own until replaced.
+  // Touching them hands control to the visitor (auto-rotate stops), as does
+  // asking for a camera view
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage?.model || shownSrc !== src) return;
+    applyTransform(stage.model, transform);
+    fitToModel(stage);
+    if (!isDefault(transform)) stage.controls.autoRotate = false;
+    if (stage.meshes) refreshBoxes(stage.meshes, inspectRef.current, stage.model, stage.inspection);
+    if (framedRef.current !== frame.n) {
+      framedRef.current = frame.n;
+      stage.controls.autoRotate = false;
+      const part = frame.object && stage.meshes ? objectFor(stage.meshes, frame.object) : null;
+      viewModel(part ?? stage.model, stage, frame.view);
+    }
+    onBoundsRef.current?.(measure(stage.model, src));
+  }, [transform, frame, shownSrc, src]);
+
+  // The Materials tab's edits and channel view. Like the Scene settings,
+  // only once the model on screen is this file
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage?.materials || shownSrc !== src) return;
+    refreshMaterials(stage.materials, materialEdits, view);
+    // the Mesh tab's surface look goes back over the new materials
+    if (stage.meshes) applySurface(stage.meshes, inspectRef.current.view);
+  }, [materialEdits, view, shownSrc, src]);
+
+  // The Mesh tab's view, hidden parts and selection, for the file on screen
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage?.meshes || !stage.model || shownSrc !== src) return;
+    const limits = applyInspection(
+      stage.meshes,
+      { view: meshView, hidden: hiddenObjects, selected: selectedObject },
+      stage.model,
+      stage.inspection,
+      stage.radius ?? 1
+    );
+    // hidden parts drop out of the ground's occlusion (the ground itself
+    // stays under the whole model)
+    const hiddenKey = hiddenObjects.join(',');
+    if (stage.hiddenKey !== hiddenKey) {
+      stage.hiddenKey = hiddenKey;
+      fitToModel(stage);
+    }
+    onMeshLimitsRef.current?.(limits);
+  }, [meshView, hiddenObjects, selectedObject, shownSrc, src]);
+
+  // The welded vertices, edges, polygons and checks: worked out (a slice at
+  // a time) once the Mesh tab opens, or the polygon wireframe needs them
+  const needsDetails = inspectMeshes || (meshView.wire.edges === 'polygons' && (meshView.wire.enabled || meshView.surface === 'off'));
+  useEffect(() => {
+    const stage = stageRef.current;
+    const meshes = stage?.meshes;
+    if (!stage || !meshes || !needsDetails || shownSrc !== src || meshes.detailed) return;
+    ensureDetails(meshes)
+      .then(() => {
+        if (stageRef.current !== stage || stage.meshes !== meshes || !stage.model) return;
+        onMeshesRef.current?.(meshReport(meshes, src));
+        // the polygon wireframe can hide its diagonals now
+        applyInspection(meshes, inspectRef.current, stage.model, stage.inspection, stage.radius ?? 1);
+      })
+      .catch((error) => console.error('Could not measure the mesh', error));
+  }, [needsDetails, shownSrc, src]);
+
+  // A channel view (or the Mesh tab's front/back and off surfaces) shows raw
+  // values: no ground, shadows or ambient occlusion over them (the
+  // visitor's lighting comes back with Lit / Shaded)
+  const inspecting = view.channel !== 'lit' || isRawSurface(meshView.surface);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || stage.inspecting === inspecting) return;
+    stage.inspecting = inspecting;
+    applyLook(stage, stage.look);
+  }, [inspecting]);
+
+  useEffect(() => {
+    if (!inspectorRef) return;
+    inspectorRef.current = {
+      textureImage: async (file, material, slot, isolate, maxSize) => {
+        const stage = stageRef.current;
+        const index = stage?.materials;
+        if (!stage || !index || materialsSrcRef.current !== file) return null;
+        const texture = await textureForSlot(index, material, slot, editsRef.current[material]);
+        // the model may have changed meanwhile
+        if (!texture || stageRef.current !== stage || stage.materials !== index) return null;
+        return readTexture(stage.renderer, texture, isolate, maxSize);
+      },
+    };
+    return () => {
+      inspectorRef.current = null;
+    };
+  }, [inspectorRef]);
+
+  // The camera projection and lighting, as the visitor changes them
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    setProjection(stage, look.projection);
+    applyLook(stage, look);
+  }, [look]);
+
+  // A newly picked environment: shown at once if it's here already,
+  // otherwise downloaded first (the current one stays meanwhile; a pick
+  // that's been replaced by another is dropped when it arrives)
+  const environment = look.environment.id;
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    if (showEnvironment(stage, environment)) {
+      if (statusRef.current.loading || statusRef.current.failed) report({ loading: null, failed: null });
+      return;
+    }
+    let cancelled = false;
+    report({ loading: environment, failed: null });
+    loadEnvironment(stage, environment)
+      .then(() => {
+        if (cancelled) return;
+        showEnvironment(stage, environment);
+        report({ loading: null });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Could not load the environment', error);
+        report({ loading: null, failed: environment });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [environment]);
 
   const failed = failedSrc === src;
   const loading = shownSrc !== src && !failed;
