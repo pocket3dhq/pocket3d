@@ -18,7 +18,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { Cameras, updateOrthoFrustum } from './camera';
+import { applyInset, Cameras, NO_INSET, updateOrthoFrustum } from './camera';
+import { preciseBox } from './bounds';
 import { GroundOcclusion } from './ground.occlusion';
 import {
   brightestDirection,
@@ -99,6 +100,8 @@ export interface Stage extends Cameras {
   // bounding radius of the model shown, to tell whether the next one is of
   // a comparable size
   radius: number | null;
+  // its longest side as authored (the Mesh tab's normals are a share of it)
+  size: number;
   // the model's materials, for the Materials tab
   materials: MaterialIndex | null;
   // the model's objects and geometry, for the Mesh tab, and where its dots,
@@ -240,8 +243,12 @@ export const createStage = (container: HTMLElement): Stage => {
     orthographic,
     active: perspective,
     controls,
+    viewport: { width, height },
+    inset: NO_INSET,
+    framed: null,
     model: null,
     radius: null,
+    size: 1,
     materials: null,
     meshes: null,
     inspection,
@@ -271,6 +278,9 @@ export const resizeStage = (stage: Stage, width: number, height: number) => {
   stage.perspective.aspect = aspect;
   stage.perspective.updateProjectionMatrix();
   updateOrthoFrustum(stage.orthographic, aspect);
+  // the view offset is in pixels of the canvas
+  stage.viewport = { width, height: Math.max(height, 1) };
+  applyInset(stage);
   stage.occlusion?.composer.setSize(width, height);
 };
 
@@ -369,7 +379,7 @@ export const showEnvironment = (stage: Stage, id: EnvironmentId) => {
 // The model's box in the world, or null before one loads
 const modelBox = (stage: Stage) => {
   if (!stage.model) return null;
-  const box = new THREE.Box3().setFromObject(stage.model);
+  const box = preciseBox(stage.model);
   return box.isEmpty() ? null : box;
 };
 

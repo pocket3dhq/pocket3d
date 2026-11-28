@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { isTyping } from './versions';
 import { DEFAULT_TRANSFORM, isDefault, SceneBounds, SceneTransform } from './scene.settings';
 import { CameraView, DEFAULT_LOOK, LookStatus, ViewLook } from './look.settings';
-import { setProjection, viewModel } from './camera';
+import { coveredInset, setInset, setProjection, viewModel } from './camera';
+import { preciseBox } from './bounds';
 import { DEFAULT_VIEW, Isolate, MaterialEdits, MaterialsReport, SlotId, ViewMode } from './material.settings';
 import { disposeMaterialIndex, indexMaterials, materialKeyFor, refreshMaterials, textureForSlot } from './materials';
 import { DEFAULT_MESH_VIEW, isRawSurface, MeshReport, MeshView } from './mesh.settings';
@@ -19,6 +20,7 @@ import {
   InspectState,
   meshReport,
   objectFor,
+  PRIMITIVE_KEY,
   pickAt,
   refreshBoxes,
 } from './mesh.inspect';
@@ -37,8 +39,15 @@ import {
   Stage,
 } from './stage';
 
-const boundingRadius = (root: THREE.Object3D) =>
-  new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere()).radius || 1;
+// The bounding radius and longest side of a model as authored
+const measureModel = (root: THREE.Object3D) => {
+  const box = preciseBox(root);
+  const side = box.getSize(new THREE.Vector3());
+  return {
+    radius: box.getBoundingSphere(new THREE.Sphere()).radius || 1,
+    size: Math.max(side.x, side.y, side.z) || 1,
+  };
+};
 
 // A new version within this factor of the old one's size keeps the camera
 // where it is, so flipping between versions shows what changed; beyond it
@@ -50,7 +59,7 @@ const KEEP_CAMERA_RATIO = 3;
 // holder sits at that middle, the scene inside is shifted back by it, so
 // with no settings everything is exactly where the file put it
 const makeHolder = (scene: THREE.Object3D) => {
-  const pivot = new THREE.Box3().setFromObject(scene).getCenter(new THREE.Vector3());
+  const pivot = preciseBox(scene).getCenter(new THREE.Vector3());
   if (!Number.isFinite(pivot.x + pivot.y + pivot.z)) pivot.set(0, 0, 0);
   const offset = new THREE.Group();
   offset.position.copy(pivot).negate();
@@ -76,7 +85,7 @@ const applyTransform = (holder: THREE.Object3D, transform: SceneTransform) => {
 };
 
 const measure = (holder: THREE.Object3D, src: string): SceneBounds => {
-  const box = new THREE.Box3().setFromObject(holder);
+  const box = preciseBox(holder);
   return { src, min: box.min.toArray(), max: box.max.toArray() };
 };
 
@@ -92,6 +101,7 @@ export interface FrameRequest {
 const NO_FRAME: FrameRequest = { view: 'fit', n: 0 };
 const NO_EDITS: MaterialEdits = {};
 const NOTHING_HIDDEN: string[] = [];
+const NO_COVERS: readonly (HTMLElement | null)[] = [];
 
 // A click on the model, while the Mesh tab picks: the part under it (null:
 // none) and its material in the Materials tab
@@ -130,7 +140,9 @@ export interface ViewerHandle {
 // `hiddenObjects` and `selectedObject` (ids for this file), `inspectMeshes`
 // (the tab is open: its numbers are worked out and clicks pick parts),
 // `onMeshes` hears the file's objects and numbers, `onPick` the clicks,
-// `onMeshLimits` when there are too many vertices for every dot or normal
+// `onMeshLimits` when there are too many vertices for every dot or normal.
+// `covers` are the panels laid over the viewer (null: closed): the model is
+// framed and centred in the room they leave
 export const ModelViewer: FC<{
   src: string;
   title: string;
@@ -150,6 +162,7 @@ export const ModelViewer: FC<{
   onMeshes?: (report: MeshReport) => void;
   onPick?: (pick: MeshPick) => void;
   onMeshLimits?: (limits: InspectLimits) => void;
+  covers?: readonly (HTMLElement | null)[];
 }> = ({
   src,
   title,
@@ -169,6 +182,7 @@ export const ModelViewer: FC<{
   onMeshes,
   onPick,
   onMeshLimits,
+  covers = NO_COVERS,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Stage | null>(null);
@@ -221,9 +235,11 @@ export const ModelViewer: FC<{
     stageRef.current = stage;
     const { renderer, controls } = stage;
 
-    // the first touch or drag hands control to the visitor for good
+    // the first touch or drag hands control to the visitor for good (and
+    // the camera is theirs: a panel opening no longer reframes it)
     const stopAutoRotate = () => {
       controls.autoRotate = false;
+      stage.framed = null;
     };
     controls.addEventListener('start', stopAutoRotate);
 
@@ -287,6 +303,21 @@ export const ModelViewer: FC<{
     stageRef.current?.renderer.domElement.setAttribute('aria-label', `3D model: ${title}`);
   }, [title]);
 
+  // What the panels cover, whenever they open, close or change size
+  useEffect(() => {
+    const stage = stageRef.current;
+    const container = containerRef.current;
+    if (!stage || !container) return;
+    const panels = covers.filter((panel): panel is HTMLElement => !!panel);
+    const fit = () =>
+      setInset(stage, coveredInset(container.getBoundingClientRect(), panels.map((panel) => panel.getBoundingClientRect())));
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(container);
+    for (const panel of panels) observer.observe(panel);
+    return () => observer.disconnect();
+  }, [covers]);
+
   // The model: loaded whenever the file changes. The one on screen stays
   // until the new one is ready; a load that finishes after a newer request
   // (quick clicks through versions) is thrown away, never shown
@@ -305,7 +336,7 @@ export const ModelViewer: FC<{
         const next = makeHolder(gltf.scene);
         prepareModel(stage, next);
         // the camera decision compares files as authored, before settings
-        const radius = boundingRadius(next);
+        const { radius, size } = measureModel(next);
         applyTransform(next, transformRef.current);
         const previous = stage.model;
         // the Mesh tab's looks sit over the materials: they come off first
@@ -317,6 +348,14 @@ export const ModelViewer: FC<{
         }
         const materials = indexMaterials(gltf);
         // an unlit material's PBR textures arrive later: the edits apply again
+        // a mesh with several primitives loads as one three mesh each (named
+        // by three, not the file): the Mesh tab lists them by material
+        for (const [object, mapping] of gltf.parser.associations) {
+          const { primitives, nodes } = mapping as { primitives?: number; nodes?: number };
+          if (primitives !== undefined && nodes === undefined && object instanceof THREE.Object3D) {
+            object.userData[PRIMITIVE_KEY] = true;
+          }
+        }
         const meshes = indexMeshes(gltf.scene);
         materials.onLoaded = () => {
           if (stage.materials !== materials) return;
@@ -334,12 +373,13 @@ export const ModelViewer: FC<{
           stage.radius / radius > KEEP_CAMERA_RATIO;
         stage.model = next;
         stage.radius = radius;
+        stage.size = size;
         if (reframe) {
           viewModel(next, stage, 'fit');
         }
         fitToModel(stage);
         if (!isDefault(transformRef.current)) stage.controls.autoRotate = false;
-        onMeshLimitsRef.current?.(applyInspection(meshes, inspectRef.current, next, stage.inspection, radius));
+        onMeshLimitsRef.current?.(applyInspection(meshes, inspectRef.current, next, stage.inspection, size));
         stage.hiddenKey = inspectRef.current.hidden.join(',');
         onBoundsRef.current?.(measure(next, src));
         onMaterialsRef.current?.({ src, ...materials.report });
@@ -402,7 +442,7 @@ export const ModelViewer: FC<{
       { view: meshView, hidden: hiddenObjects, selected: selectedObject },
       stage.model,
       stage.inspection,
-      stage.radius ?? 1
+      stage.size
     );
     // hidden parts drop out of the ground's occlusion (the ground itself
     // stays under the whole model)
@@ -426,7 +466,7 @@ export const ModelViewer: FC<{
         if (stageRef.current !== stage || stage.meshes !== meshes || !stage.model) return;
         onMeshesRef.current?.(meshReport(meshes, src));
         // the polygon wireframe can hide its diagonals now
-        applyInspection(meshes, inspectRef.current, stage.model, stage.inspection, stage.radius ?? 1);
+        applyInspection(meshes, inspectRef.current, stage.model, stage.inspection, stage.size);
       })
       .catch((error) => console.error('Could not measure the mesh', error));
   }, [needsDetails, shownSrc, src]);

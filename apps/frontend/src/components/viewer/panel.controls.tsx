@@ -169,8 +169,10 @@ export const Toggle: FC<{
   disabled?: boolean;
   labelledBy?: string;
   label?: string;
-}> = ({ checked, onChange, disabled, labelledBy, label }) => (
+  id?: string;
+}> = ({ checked, onChange, disabled, labelledBy, label, id }) => (
   <button
+    id={id}
     type="button"
     role="switch"
     aria-checked={checked}
@@ -203,12 +205,13 @@ export const Switch: FC<{
   return (
     <div className="flex flex-col gap-[6px]">
       <div className={`flex min-h-[28px] items-center gap-[8px] ${disabled ? 'opacity-50' : ''}`}>
-        <span id={id} className="text-[14px] text-textColor/80">
+        {/* the name flips the switch too */}
+        <label id={id} htmlFor={`${id}-switch`} className={`text-[14px] text-textColor/80 ${disabled ? '' : 'cursor-pointer'}`}>
           {label}
-        </span>
+        </label>
         {about.button}
         <span className="ms-auto flex">
-          <Toggle checked={checked} onChange={onChange} disabled={disabled} labelledBy={id} />
+          <Toggle id={`${id}-switch`} checked={checked} onChange={onChange} disabled={disabled} labelledBy={id} />
         </span>
       </div>
       {about.text}

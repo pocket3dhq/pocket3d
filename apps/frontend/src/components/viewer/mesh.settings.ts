@@ -22,7 +22,7 @@ export interface MeshView {
     opacity: number;
   };
   vertices: boolean;
-  // normal length is a fraction of the model's size
+  // normal length is a fraction of the model's longest side
   normals: { enabled: boolean; length: number };
   bounds: BoundsMode;
 }
@@ -229,15 +229,15 @@ export const MESH_INFO = {
   surface:
     'Shaded draws the materials as authored. Solid draws every surface in one clay colour, so the shape reads without textures. Facing colours the side of each face you see: blue is its front, red its back (a red patch on a closed model is a flipped face). Off leaves only the wireframe.',
   edges:
-    "Polygons hides the diagonal inside each quad (or n-gon) so the mesh looks as modelled. glTF files store triangles only, so pocket3d rebuilds the quads from flat triangle pairs: marked ≈. Triangles shows every edge the graphics card draws.",
+    "Polygons hides the edges inside each quad or n-gon so the mesh looks as modelled. glTF files store triangles only, so pocket3d rebuilds the faces: flat triangle pairs become quads, and a flat convex fan with every corner on its rim becomes one n-gon (marked ≈). Triangles shows every edge the graphics card draws.",
   hidden: 'Shows the edges behind the model too, as if it were glass.',
   vertices: 'A dot on every vertex.',
   normals:
-    'A short line out of each vertex along its normal, the direction its shading faces. Lines pointing inwards show flipped normals.',
+    "A short line out of each vertex along its normal, the direction its shading faces. Lines pointing inwards show flipped normals. Their length is a share of the model's longest side.",
   bounds: 'The box the model, the selected part, or every part fits in, along the X / Y / Z axes.',
   vertexCount:
     'Vertices as a 3D app counts them: points at the same place count once. The graphics card splits a vertex wherever a UV seam or hard edge meets it, so it holds more (the smaller number).',
-  polygons: 'Faces as modelled: quads and n-gons count once. ≈: rebuilt from triangle pairs (glTF stores triangles only).',
+  polygons: 'Faces as modelled: quads and n-gons count once. ≈: rebuilt from the triangles (glTF stores triangles only).',
   totals: 'Counted as drawn: every copy of an instanced mesh, and a mesh used in several places once per place.',
   open: "Edges used by one face only: a hole's rim or the border of an open surface. Fine on planes and cards, a gap on a closed model.",
   nonManifold: 'Edges shared by more than two faces: fins or faces inside the model. 3D printing and booleans need none.',

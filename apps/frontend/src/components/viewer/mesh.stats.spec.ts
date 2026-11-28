@@ -61,11 +61,47 @@ describe('mesh stats', () => {
     expect(flipped.flippedEdges).toBe(1);
   });
 
+  it('counts an edge with a third triangle as non-manifold, not flipped', () => {
+    // the first two wind the same way along 0–1, then a third arrives
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1]);
+    const fin = run(analyzeGeometry(positions, [0, 1, 2, 0, 1, 3, 1, 0, 4]));
+    expect(fin.nonManifoldEdges).toBe(1);
+    expect(fin.flippedEdges).toBe(0);
+  });
+
   it('keeps a folded quad as two triangles', () => {
     // folded 90° along the diagonal
     const positions = new Float32Array([0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1]);
     const details = run(analyzeGeometry(positions, [0, 2, 1, 0, 1, 3]));
     expect(details.polygons).toBe(2);
+  });
+
+  // flat rings of vertices, z = 0
+  const flat = (points: number[][]) => new Float32Array(points.flatMap(([x, y]) => [x, y, 0]));
+  const drawnEdges = (flags: Uint8Array) =>
+    [...flags].reduce((sum, bits) => sum + (bits & 1) + ((bits >> 1) & 1) + ((bits >> 2) & 1), 0);
+  const hexagon = Array.from({ length: 6 }, (_, k) => [Math.cos((k * Math.PI) / 3), Math.sin((k * Math.PI) / 3)]);
+
+  it('rebuilds a flat fan as one n-gon', () => {
+    const details = run(analyzeGeometry(flat(hexagon), [0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5]));
+    expect(details.polygons).toBe(1);
+    // the rim only: the fan's diagonals are hidden
+    expect(drawnEdges(details.edgeFlags)).toBe(6);
+  });
+
+  it('keeps a flat strip of quads as quads', () => {
+    // 3 quads in a row: every vertex is on the rim, but the rim runs straight where they meet
+    const points = [0, 1, 2, 3].map((x) => [x, 0]).concat([0, 1, 2, 3].map((x) => [x, 1]));
+    const index = [0, 1, 2].flatMap((i) => [i, i + 1, i + 5, i, i + 5, i + 4]);
+    expect(run(analyzeGeometry(flat(points), index)).polygons).toBe(3);
+  });
+
+  it('keeps a fan around a middle vertex, and a concave fan, out of one n-gon', () => {
+    const poked = run(analyzeGeometry(flat([...hexagon, [0, 0]]), [0, 1, 2, 3, 4, 5].flatMap((k) => [6, k, (k + 1) % 6])));
+    expect(poked.polygons).toBeGreaterThan(1);
+    // an L: its corner at (1, 1) turns the other way
+    const ell = flat([[0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]]);
+    expect(run(analyzeGeometry(ell, [0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5])).polygons).toBeGreaterThan(1);
   });
 
   it("uses a loader's polygon ids over the estimate", () => {

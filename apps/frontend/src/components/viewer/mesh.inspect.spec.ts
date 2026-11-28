@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applySurface, disposeMeshIndex, ensureDetails, indexMeshes, meshReport, pickAt } from './mesh.inspect';
+import { applySurface, disposeMeshIndex, ensureDetails, indexMeshes, meshReport, pickAt, PRIMITIVE_KEY } from './mesh.inspect';
 import { DEFAULT_MESH_VIEW, MeshView } from './mesh.settings';
 import { POLYGONS_KEY } from './mesh.stats';
 
@@ -84,6 +84,25 @@ describe('mesh inspection (three side)', () => {
     const report = meshReport(indexMeshes(scene(instanced, empty)), 'file');
     expect(report.nodes).toHaveLength(1);
     expect(report.total).toMatchObject({ instances: 5, triangles: 10, drawCalls: 1 });
+  });
+
+  it('lists the primitives of a glTF mesh by their material', () => {
+    // as GLTFLoader gives a node whose mesh has two primitives
+    const node = new THREE.Group();
+    node.name = 'Hand_Hours';
+    node.userData.name = 'Hand Hours';
+    const primitive = (name: string, material: string) => {
+      const mesh = new THREE.Mesh(quad(), new THREE.MeshBasicMaterial({ name: material }));
+      mesh.name = name;
+      mesh.userData[PRIMITIVE_KEY] = true;
+      return mesh;
+    };
+    node.add(primitive('Hand_Hours_1', 'Hand Plastic'), primitive('Hand_Hours_2', ''));
+    // a mesh of its own keeps its name, whatever its material
+    const own = new THREE.Mesh(quad(), new THREE.MeshBasicMaterial({ name: 'Steel' }));
+    own.name = 'Crown';
+    const names = meshReport(indexMeshes(scene(node, own)), 'file').nodes.map((item) => item.name);
+    expect(names).toEqual(['Hand Hours', 'Hand Plastic', 'Hand_Hours_2', 'Crown']);
   });
 
   it('swaps surfaces over any material and puts them back', () => {

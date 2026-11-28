@@ -1,6 +1,6 @@
 'use client';
 
-import { FC, useCallback, useEffect, useRef, useState } from 'react';
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FrameRequest, MeshPick, ModelViewer, TextureReader, ViewerHandle } from './model.viewer';
 import { VersionsPanel } from './versions.panel';
 import { canPrefetch, isTyping, neighbours, PanelVersion, shortDate, versionHref } from './versions';
@@ -70,6 +70,10 @@ export const ViewerWithVersions: FC<{
   const [selectedObjects, setSelectedObjects] = useState<Record<number, string | null>>({});
   const [meshReport, setMeshReport] = useState<MeshReport | null>(null);
   const [meshLimits, setMeshLimits] = useState<InspectLimits>({ dots: false, normals: false });
+  // the panels over the model (null: closed), so it's framed beside them
+  const [versionsPanel, setVersionsPanel] = useState<HTMLElement | null>(null);
+  const [adjustPanel, setAdjustPanel] = useState<HTMLElement | null>(null);
+  const covers = useMemo(() => [versionsPanel, adjustPanel], [versionsPanel, adjustPanel]);
   const inspectorRef = useRef<ViewerHandle | null>(null);
   const readTexture = useCallback<TextureReader>(
     (...args) => inspectorRef.current?.textureImage(...args) ?? Promise.resolve(null),
@@ -251,6 +255,7 @@ export const ViewerWithVersions: FC<{
         onMeshes={setMeshReport}
         onPick={onPick}
         onMeshLimits={setMeshLimits}
+        covers={covers}
       />
       <header className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-[10px] p-[16px]">
         <h1 className="min-w-0 truncate text-[16px] font-semibold text-textColor drop-shadow">{title}</h1>
@@ -379,6 +384,7 @@ export const ViewerWithVersions: FC<{
 
       {hasHistory && open && (
         <aside
+          ref={setVersionsPanel}
           id="versions-panel"
           aria-label="Versions"
           className="fixed inset-x-0 bottom-0 z-10 max-h-[60vh] overflow-y-auto rounded-t-panel border-t border-line bg-bgInner/95 p-[8px] pb-[20px] backdrop-blur sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-[16px] sm:top-[56px] sm:max-h-[calc(100%-120px)] sm:w-[300px] sm:rounded-panel sm:border sm:pb-[8px]"
@@ -409,6 +415,7 @@ export const ViewerWithVersions: FC<{
 
       {adjustOpen && (
         <aside
+          ref={setAdjustPanel}
           id="scene-panel"
           aria-label="Adjust the view"
           className="fixed inset-x-0 bottom-0 z-10 max-h-[60vh] overflow-y-auto rounded-t-panel border-t border-line bg-bgInner/95 backdrop-blur [color-scheme:dark] sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-[16px] sm:top-[56px] sm:max-h-[calc(100%-120px)] sm:w-[340px] sm:rounded-panel sm:border"

@@ -9,9 +9,11 @@
 //   geometry.userData.p3dPolygons = Uint32Array  // polygon id per triangle,
 //                                                // in index order, ids 0..n-1
 //
-// Without it the polygons are estimated (estimatePolygons): two triangles
-// make a quad when they share the longest edge of both, are nearly flat and
-// convex. A wrong guess fails safe: the pair stays two triangles.
+// Without it the polygons are estimated (estimatePolygons). A flat region
+// of triangles makes one n-gon when it can't be anything else (flatPolygons:
+// a fan with every corner on its rim, convex). Then two triangles make a
+// quad when they share the longest edge of both, are nearly flat and convex.
+// A wrong guess fails safe: the triangles stay as they are.
 
 export type PolygonSource = 'file' | 'estimated';
 
@@ -107,6 +109,8 @@ export function* edgeTable(
   // many triangles use it (up to 255)
   const firsts = new Int32Array(size);
   const uses = new Uint8Array(size);
+  // the edge's two triangles wind the same way (counted in `flipped`)
+  const flips = new Uint8Array(size);
   const neighbour = new Int32Array(halfEdges).fill(-1);
   let flipped = 0;
   let degenerate = 0;
@@ -141,9 +145,18 @@ export function* edgeTable(
             // the same direction on both sides: the windings disagree
             const otherTriangle = (other / 3) | 0;
             const otherFrom = corner(remap, index, otherTriangle, other % 3);
-            if (otherFrom === from) flipped++;
+            if (otherFrom === from) {
+              flips[slot] = 1;
+              flipped++;
+            }
           } else if (uses[slot] === 2) {
-            // a third triangle: nobody is anybody's neighbour here
+            // a third triangle: nobody is anybody's neighbour here, and
+            // the edge is non-manifold, not flipped (which two triangles
+            // came first says nothing about which one faces the wrong way)
+            if (flips[slot]) {
+              flips[slot] = 0;
+              flipped--;
+            }
             const second = neighbour[other];
             if (second >= 0) neighbour[second] = -1;
             neighbour[other] = -1;
@@ -224,20 +237,182 @@ export interface Polygons {
   count: number;
 }
 
+// ---- n-gons ----
+
+// glTF stores a modelled n-gon as a fan of triangles. A flat region of
+// triangles is one polygon when it can only be one: a disc with every vertex
+// on its rim (triangulating a polygon never adds a vertex inside it), convex,
+// with no corner on a straight line. A flat strip of quads is a disc with
+// every vertex on its rim too, but its quads meet the rim in straight
+// corners, so it stays quads. Anything else is left to the quad rule
+
+// How far a triangle may tilt from the region's first one
+export const NGON_MAX_TILT_DEGREES = 1;
+const NGON_MIN_COS = Math.cos((NGON_MAX_TILT_DEGREES * Math.PI) / 180);
+// How far a rim vertex may stray from the region's plane, as a share of the
+// region's size (a curved patch of a dense mesh is not flat)
+const NGON_FLATNESS = 1e-4;
+// A corner turning less than this (the sine of its angle) is straight
+const NGON_MIN_TURN = 1e-3;
+
+interface Region {
+  // the triangles in it
+  members: number[];
+  // the first triangle's unit normal
+  normal: P;
+}
+
+// The rim of a region as one loop of vertex positions (in winding order), or
+// null when it isn't a disc with every vertex on its rim
+const rimLoop = (
+  region: Region,
+  positions: Float32Array,
+  index: ArrayLike<number> | null,
+  remap: Uint32Array,
+  neighbour: Int32Array,
+  inRegion: Int32Array,
+  id: number
+) => {
+  const next = new Map<number, number>();
+  const at = new Map<number, number>();
+  const vertices = new Set<number>();
+  for (const t of region.members) {
+    for (let e = 0; e < 3; e++) {
+      const from = remap[index ? index[t * 3 + e] : t * 3 + e];
+      vertices.add(from);
+      const across = neighbour[t * 3 + e];
+      if (across >= 0 && inRegion[(across / 3) | 0] === id) continue;
+      // a rim edge: a vertex starts one at most (else the rim pinches)
+      if (next.has(from)) return null;
+      next.set(from, remap[index ? index[t * 3 + ((e + 1) % 3)] : t * 3 + ((e + 1) % 3)]);
+      at.set(from, index ? index[t * 3 + e] : t * 3 + e);
+    }
+  }
+  // a disc of T triangles with every vertex on its rim has T + 2 vertices,
+  // all of them on one loop
+  const count = vertices.size;
+  if (region.members.length !== count - 2 || next.size !== count) return null;
+  const start = next.keys().next().value as number;
+  const loop: P[] = [];
+  let vertex = start;
+  do {
+    const raw = at.get(vertex) as number;
+    loop.push([positions[raw * 3], positions[raw * 3 + 1], positions[raw * 3 + 2]]);
+    vertex = next.get(vertex) as number;
+  } while (vertex !== start && loop.length <= count);
+  return loop.length === count && vertex === start ? loop : null;
+};
+
+// The rim lies in one plane, turns the same way at every corner (convex) and
+// never goes straight on
+const isFlatConvex = (loop: P[], normal: P) => {
+  let size = 0;
+  let magnitude = 0;
+  for (const p of loop) {
+    size = Math.max(size, lengthSq(sub(p, loop[0])));
+    magnitude = Math.max(magnitude, Math.abs(p[0]), Math.abs(p[1]), Math.abs(p[2]));
+  }
+  // float positions far from the origin are only so exact
+  const tolerance = Math.max(NGON_FLATNESS * Math.sqrt(size), 1e-6 * magnitude);
+  for (const p of loop) {
+    if (Math.abs(dot(sub(p, loop[0]), normal)) > tolerance) return false;
+  }
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    const c = loop[(i + 2) % loop.length];
+    const d1 = sub(b, a);
+    const d2 = sub(c, b);
+    const turn = dot(cross(d1, d2), normal) / Math.sqrt(lengthSq(d1) * lengthSq(d2));
+    if (!(turn > NGON_MIN_TURN)) return false;
+  }
+  return true;
+};
+
+// Marks the flat n-gons (three triangles or more) in `ids` and `done`, and
+// returns how many polygons it made
+function* flatPolygons(
+  positions: Float32Array,
+  index: ArrayLike<number> | null,
+  remap: Uint32Array,
+  triangles: number,
+  neighbour: Int32Array,
+  ids: Uint32Array,
+  done: Uint8Array
+): Generator<void, number> {
+  const normals = new Float64Array(triangles * 3);
+  // 0 for a triangle without area: never part of a region
+  const usable = new Uint8Array(triangles);
+  for (let t = 0; t < triangles; t++) {
+    const p = point(positions, index, t, 0);
+    const n = cross(sub(point(positions, index, t, 1), p), sub(point(positions, index, t, 2), p));
+    const length = Math.sqrt(lengthSq(n));
+    if (length > 0) {
+      normals.set([n[0] / length, n[1] / length, n[2] / length], t * 3);
+      usable[t] = 1;
+    }
+    if ((t & 0x7fff) === 0x7fff) yield;
+  }
+  // the region a triangle was grown into (each joins one at most)
+  const inRegion = new Int32Array(triangles).fill(-1);
+  let regions = 0;
+  let count = 0;
+  let work = 0;
+  for (let seed = 0; seed < triangles; seed++) {
+    if (!usable[seed] || inRegion[seed] >= 0) continue;
+    const id = regions++;
+    const normal: P = [normals[seed * 3], normals[seed * 3 + 1], normals[seed * 3 + 2]];
+    const region: Region = { members: [], normal };
+    const stack = [seed];
+    inRegion[seed] = id;
+    while (stack.length) {
+      const t = stack.pop() as number;
+      region.members.push(t);
+      for (let e = 0; e < 3; e++) {
+        const across = neighbour[t * 3 + e];
+        if (across < 0) continue;
+        const u = (across / 3) | 0;
+        if (!usable[u] || inRegion[u] >= 0) continue;
+        const cos = normals[u * 3] * normal[0] + normals[u * 3 + 1] * normal[1] + normals[u * 3 + 2] * normal[2];
+        if (cos < NGON_MIN_COS) continue;
+        inRegion[u] = id;
+        stack.push(u);
+      }
+    }
+    work += region.members.length;
+    if (region.members.length >= 3) {
+      const loop = rimLoop(region, positions, index, remap, neighbour, inRegion, id);
+      if (loop && isFlatConvex(loop, normal)) {
+        for (const t of region.members) {
+          ids[t] = count;
+          done[t] = 1;
+        }
+        count++;
+      }
+    }
+    if (work > 0x7fff) {
+      work = 0;
+      yield;
+    }
+  }
+  return count;
+}
+
 export function* estimatePolygons(
   positions: Float32Array,
   index: ArrayLike<number> | null,
+  remap: Uint32Array,
   triangles: number,
   neighbour: Int32Array
 ): Generator<void, Polygons> {
+  const ids = new Uint32Array(triangles);
+  const done = new Uint8Array(triangles);
+  let count = yield* flatPolygons(positions, index, remap, triangles, neighbour, ids, done);
   const longest = new Uint8Array(triangles);
   for (let t = 0; t < triangles; t++) {
     longest[t] = longestEdge(positions, index, t);
     if ((t & 0x7fff) === 0x7fff) yield;
   }
-  const ids = new Uint32Array(triangles);
-  const done = new Uint8Array(triangles);
-  let count = 0;
   for (let t = 0; t < triangles; t++) {
     if (done[t]) continue;
     done[t] = 1;
@@ -403,7 +578,7 @@ export function* analyzeGeometry(
   const welded = yield* weld(positions);
   const edges = yield* edgeTable(welded.remap, index, triangles);
   const known = filePolygons(polygons, triangles);
-  const faces = known ?? (yield* estimatePolygons(positions, index, triangles, edges.neighbour));
+  const faces = known ?? (yield* estimatePolygons(positions, index, welded.remap, triangles, edges.neighbour));
   const source: PolygonSource = known ? 'file' : 'estimated';
   const parts: PartDetails[] = [];
   for (const range of ranges) {

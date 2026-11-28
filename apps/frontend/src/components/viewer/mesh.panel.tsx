@@ -163,7 +163,8 @@ const Stats: FC<{ stats: MeshStats; detailed: boolean; objects?: number; size?: 
         <span>{plural(stats.meshes, 'mesh', 'meshes')}</span>
         <span>{plural(stats.drawCalls, 'draw call')}</span>
         {stats.instances > 0 && <span>{plural(stats.instances, 'instance')}</span>}
-        <span>{plural(stats.materials, 'material')}</span>
+        {/* the whole model's: the ones its meshes use (a file can hold more, as variants) */}
+        <span>{plural(stats.materials, 'material')}{objects !== undefined ? ' in use' : ''}</span>
         {size && <span>{size}</span>}
       </div>
       {traits.length > 0 && <div className="font-mono text-[11px] text-textMuted">{traits.join(' · ')}</div>}
@@ -375,7 +376,7 @@ export const MeshPanel: FC<{
               max={MESH_LIMITS.normalLength[1]}
               step={0.005}
               reset={0.03}
-              format={(value) => `${(value * 100).toFixed(1)}% of size`}
+              format={(value) => `${(value * 100).toFixed(1)}% of longest side`}
               onChange={(length) => setNormals({ length: clampMesh(length, MESH_LIMITS.normalLength) })}
             />
           </>
@@ -446,6 +447,11 @@ export const MeshPanel: FC<{
           </ul>
         )}
         {report && nodes.length === 0 && <p className="text-[13px] text-textMuted">Nothing to list.</p>}
+        {nodes.length > 0 && query.trim() !== '' && listed.length === 0 && (
+          <p className="text-[13px] text-textMuted" role="status">
+            No object named “{query.trim()}”.
+          </p>
+        )}
       </Section>
     </>
   );

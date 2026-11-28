@@ -14,6 +14,7 @@
 // here exists and the picture is as it always was.
 
 import * as THREE from 'three';
+import { preciseBox } from './bounds';
 import {
   analyzeGeometry,
   Drawable,
@@ -43,6 +44,12 @@ import {
 
 // Marks the objects made here (stage traversals and picks skip them)
 export const OVERLAY_KEY = 'p3dOverlay';
+
+// Marks a mesh that is one material's share of a mesh in the file (glTF: a
+// primitive of a mesh with several, which three loads as one mesh each under
+// the node). three makes its name up ("Hand_Hours_1"): it's listed by its
+// material's name instead
+export const PRIMITIVE_KEY = 'p3dPrimitive';
 export const isOverlay = (object: THREE.Object3D) => !!object.userData[OVERLAY_KEY];
 
 type DrawObject = THREE.Mesh | THREE.Line | THREE.Points;
@@ -259,9 +266,16 @@ const partName = (object: DrawObject, group: THREE.GeometryGroup, number: number
 
 // The name as the file wrote it: three's glTF loader makes object names
 // safe for animation paths ("Crate 7" → "Crate_7") and keeps the original
-// in userData.name
-const displayName = (object: THREE.Object3D) =>
-  typeof object.userData.name === 'string' && object.userData.name ? object.userData.name : object.name;
+// in userData.name. A primitive goes by its material's name
+const displayName = (object: THREE.Object3D) => {
+  if (typeof object.userData.name === 'string' && object.userData.name) return object.userData.name;
+  if (object.userData[PRIMITIVE_KEY]) {
+    const material = (object as THREE.Mesh).material;
+    const name = (Array.isArray(material) ? material[0] : material)?.name;
+    if (name) return name;
+  }
+  return object.name;
+};
 
 const fallbackName = (object: THREE.Object3D, kind: NodeKind, number: number) => {
   if ((object as THREE.SkinnedMesh).isSkinnedMesh) return `Skinned mesh ${number}`;
@@ -865,7 +879,7 @@ const syncNormals = (
   selected: string | null,
   holder: THREE.Object3D,
   group: THREE.Group,
-  radius: number
+  size: number
 ) => {
   if (!view.normals.enabled) {
     disposeHelper(index.normals?.object);
@@ -873,7 +887,7 @@ const syncNormals = (
     return false;
   }
   const { meshes, limited } = pointMeshes(index, selected, MAX_NORMALS);
-  const length = view.normals.length * radius;
+  const length = view.normals.length * size;
   const key = `${meshes.map((draw) => draw.id).join(',')}:${length}:${view.wire.hidden}`;
   if (index.normals?.key === key) return limited;
   disposeHelper(index.normals?.object);
@@ -931,13 +945,13 @@ const syncBoxes = (index: MeshIndex, view: MeshView, selected: string | null, ho
   holder.updateMatrixWorld(true);
   const positions: number[] = [];
   if (view.bounds === 'model') {
-    pushBox(positions, new THREE.Box3().setFromObject(holder));
+    pushBox(positions, preciseBox(holder));
   } else if (view.bounds === 'selection') {
     const object = selected === null ? null : objectFor(index, selected);
-    if (object) pushBox(positions, new THREE.Box3().setFromObject(object));
+    if (object) pushBox(positions, preciseBox(object));
   } else {
     const draws = index.draws.filter((draw) => shown(index, draw.object)).slice(0, MAX_BOXES);
-    for (const draw of draws) pushBox(positions, new THREE.Box3().setFromObject(draw.object));
+    for (const draw of draws) pushBox(positions, preciseBox(draw.object));
   }
   if (!positions.length) return;
   const geometry = new THREE.BufferGeometry();
@@ -965,20 +979,21 @@ export interface InspectLimits {
 }
 
 // Puts the Mesh tab's view on the model. `holder` is the group the
-// visitor's Scene settings move, `radius` the model's size (normal length)
+// visitor's Scene settings move, `size` the model's longest side as
+// authored (normals are a share of it)
 export const applyInspection = (
   index: MeshIndex,
   state: InspectState,
   holder: THREE.Object3D,
   groups: InspectionGroups,
-  radius: number
+  size: number
 ): InspectLimits => {
   if (!index.alive) return { dots: false, normals: false };
   setHidden(index, state.hidden);
   applySurface(index, state.view);
   syncWire(index, state.view, state.selected);
   const dots = syncDots(index, state.view, state.selected, holder, groups.model);
-  const normals = syncNormals(index, state.view, state.selected, holder, groups.model, radius);
+  const normals = syncNormals(index, state.view, state.selected, holder, groups.model, size);
   syncBoxes(index, state.view, state.selected, holder, groups.world);
   return { dots, normals };
 };
